@@ -1,0 +1,2 @@
+# 运行时依赖极简：SQLite(FTS5) 为标准库自带，向量检索用纯 Python 暴力余弦。
+# 不引入 faiss / numpy / tantivy，保持零编译依赖。

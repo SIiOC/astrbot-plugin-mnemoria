@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# 运行时数据（插件数据在 AstrBot 的 plugin_data 目录，绝不入库）
+data/
+*.db
+*.db-wal
+*.db-shm
+logs/
+
+# 开发/审查工作区产物
+_stray_*/
+*.bak

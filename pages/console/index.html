@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>好想记住你 · 记忆控制台</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">忆</span>
+        <span class="title">好想记住你 <em>记忆控制台</em></span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-view="overview">总览</button>
+        <button class="tab" data-view="memories">记忆库</button>
+        <button class="tab" data-view="profiles">画像</button>
+        <button class="tab" data-view="notes">笔记</button>
+        <button class="tab" data-view="ledger">账本</button>
+        <button class="tab" data-view="probe">检索探针</button>
+        <button class="tab" data-view="trash">回收站</button>
+        <button class="tab" data-view="config">设置</button>
+        <button class="tab" data-view="settings">维护</button>
+      </nav>
+      <div class="scope-picker">
+        <label>隔离域
+          <input id="scopeInput" type="text" value="default" />
+        </label>
+      </div>
+    </header>
+
+    <main>
+      <!-- 总览：统计卡片 + 记忆星图（设计稿 v4 生产版） -->
+      <section class="view active" id="view-overview">
+        <div class="cards" id="statCards"></div>
+
+        <div class="sm-stage" id="smStage">
+          <canvas id="smCanvas"></canvas>
+          <div class="sm-masthead">
+            <div class="sm-stats" id="smStats"></div>
+            <div class="sm-status" id="smStatus"></div>
+          </div>
+          <div class="sm-probe">
+            <span class="icon">✦</span>
+            <input id="smProbe" placeholder="检索探针：一句话，看它点亮哪些星…" />
+            <div class="sm-probe-result" id="smProbeResult"></div>
+          </div>
+          <div class="sm-legend" id="smLegend"></div>
+          <div class="sm-timeline">
+            <button class="sm-play" id="smPlay">▶</button>
+            <div class="sm-track" id="smTrack">
+              <canvas id="smTlCanvas"></canvas>
+              <div class="sm-cursor" id="smCursor"></div>
+              <div class="sm-date" id="smDate"></div>
+            </div>
+            <input type="range" class="sm-range" id="smReveal" min="0" max="1000" value="1000" />
+          </div>
+          <div class="sm-detail" id="smDetail"></div>
+          <div class="sm-tip" id="smTip"></div>
+          <div class="sm-hint">拖拽 旋转 · 滚轮 缩放 · 大星 = 星座（点击飞入）· 点击星 查看记忆 · 双击空白 复位 · Esc 退出 · 底部回放点亮顺序</div>
+        </div>
+      </section>
+
+      <!-- 记忆库：全部记忆的增删改（设计稿 v6 生产版） -->
+      <section class="view" id="view-memories">
+        <div class="lib-toolbar">
+          <button id="libAddToggle" class="btn primary">＋ 新增记忆</button>
+          <span class="count" id="libStatsTop"></span>
+        </div>
+        <div class="lib-addpanel" id="libAddPanel">
+          <textarea id="libNewContent" rows="3" placeholder="写一条自包含的第三人称陈述，如：用户的名字是张三"></textarea>
+          <div class="lib-addrow">
+            <select id="libNewType" class="lib-type"></select>
+            <div class="lib-act"><span class="lib-sw" id="libNewActive"></span><span class="lbl">主动记忆</span></div>
+            <span class="hint">走与自动抽取相同的写入门：重复内容会强化既有记忆、元指令/隐私串会被隔离，不会重复入库。</span>
+            <button id="libAddCancel" class="btn">取消</button>
+            <button id="libAddSave" class="btn primary">保存</button>
+          </div>
+        </div>
+        <div class="lib-layout">
+          <aside class="lib-side">
+            <input class="lib-search" id="libSearch" placeholder="搜索记忆内容…" />
+            <h3>状态</h3>
+            <div class="lib-seg" id="libSeg">
+              <button data-v="all" class="on">全部</button>
+              <button data-v="active">主动</button>
+              <button data-v="passive">被动</button>
+            </div>
+            <h3>类型</h3>
+            <div class="lib-typechips" id="libTypeChips"></div>
+            <h3>排序</h3>
+            <select class="lib-sort" id="libSort">
+              <option value="time">最近记住</option>
+              <option value="strength">强度最高</option>
+              <option value="heat">最常被召回</option>
+            </select>
+            <div class="lib-stats" id="libStats"></div>
+          </aside>
+          <div class="lib-main">
+            <div class="lib-list" id="libList"></div>
+            <div class="lib-pager" id="libPager"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-profiles">
+        <div class="toolbar">
+          <input id="profUser" type="text" placeholder="用户 ID（留空看全部）" list="profUserList" />
+          <datalist id="profUserList"></datalist>
+          <button id="profLoad" class="btn primary">加载</button>
+          <span class="spacer"></span>
+          <button id="profAddBtn" class="btn primary">＋ 新增画像</button>
+        </div>
+        <div class="panel create-panel" id="profCreatePanel" style="display:none">
+          <h3 id="profFormTitle">新增画像条目</h3>
+          <div class="create-row">
+            <label>用户 ID <input id="profFUid" type="text" placeholder="如 123456789" /></label>
+            <label>维度 <input id="profFKey" type="text" placeholder="如 称呼 / 职业 / 雷点" /></label>
+          </div>
+          <div class="create-row">
+            <label class="grow">取值 <input id="profFValue" type="text" placeholder="如 小张 / 对芒果过敏" /></label>
+            <label>置信度 <input id="profFConf" type="number" min="0" max="1" step="0.05" value="1" /></label>
+          </div>
+          <div class="create-row">
+            <p class="hint">同一「用户 ID + 维度」再次保存即覆盖更新。画像注入在系统提示末尾、永不衰减。</p>
+            <span class="spacer"></span>
+            <button id="profSave" class="btn primary">保存</button>
+            <button id="profCancel" class="btn">取消</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid">
+            <thead><tr><th>用户</th><th>维度</th><th>取值</th><th>置信度</th><th>更新时间</th><th></th></tr></thead>
+            <tbody id="profRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="view" id="view-notes">
+        <div class="toolbar">
+          <input id="noteSearch" type="text" placeholder="搜索笔记（留空列出全部）" />
+          <button id="noteSearchBtn" class="btn primary">搜索</button>
+          <span class="spacer"></span>
+          <button id="noteNewBtn" class="btn primary">＋ 新增笔记</button>
+          <button id="noteImportBtn" class="btn">导入 .md</button>
+          <input id="noteFile" type="file" accept=".md,.markdown,.txt" style="display:none" />
+          <span class="count" id="noteCount"></span>
+        </div>
+        <div class="panel create-panel" id="noteCreatePanel" style="display:none">
+          <h3>新增笔记</h3>
+          <input id="noteNewTitle" type="text" placeholder="标题（可选）" />
+          <textarea id="noteNewContent" rows="3" placeholder="笔记正文，自包含可独立阅读"></textarea>
+          <div class="create-row">
+            <input id="noteNewTags" type="text" placeholder="标签（逗号分隔，可选）" />
+            <span class="spacer"></span>
+            <button id="noteNewSave" class="btn primary">保存</button>
+            <button id="noteNewCancel" class="btn">取消</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="grid">
+            <thead><tr>
+              <th>标题</th><th>内容</th><th>来源</th><th>标题路径</th><th>更新时间</th><th></th>
+            </tr></thead>
+            <tbody id="noteRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="view" id="view-ledger">
+        <div class="toolbar">
+          <input id="ledSearch" type="text" placeholder="搜索历史对话" />
+          <button id="ledSearchBtn" class="btn primary">搜索</button>
+          <span class="spacer"></span>
+          <span class="count" id="ledCount"></span>
+        </div>
+        <div class="timeline" id="ledRows"><div class="empty">加载中…</div></div>
+      </section>
+
+      <section class="view" id="view-probe">
+        <div class="toolbar">
+          <input id="probeQuery" type="text" placeholder="输入一句话，看看会召回哪些记忆" />
+          <button id="probeBtn" class="btn primary">检索</button>
+        </div>
+        <p class="hint">检索为「向量 + 关键词 + 时间近因」三路 RRF 融合；每条会显示各通道排名与热度（receipt）。</p>
+        <div class="probe-list" id="probeRows"></div>
+      </section>
+
+      <section class="view" id="view-trash">
+        <div class="toolbar">
+          <span class="count">已删除的记忆会在此保留 30 天，可随时恢复。</span>
+          <span class="spacer"></span>
+          <button id="trashReload" class="btn">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table class="grid">
+            <thead><tr><th>内容</th><th>类型</th><th>强度</th><th>创建于</th><th>删除于</th><th></th></tr></thead>
+            <tbody id="trashRows"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 设置：13 分组功能配置（设计稿 v5 生产版） -->
+      <section class="view" id="view-config">
+        <div class="cfg-topbar">
+          <div class="cfg-title">功能设置 <em>改动保存后热生效，无需重启</em></div>
+          <button class="btn primary" id="cfgSaveBtn">保存配置</button>
+        </div>
+        <div class="cfg-layout">
+          <nav class="cfg-nav" id="cfgNav"></nav>
+          <div class="cfg-sections" id="cfgSections"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="panel">
+          <h3>手动维护</h3>
+          <div class="actions">
+            <button id="runDecay" class="btn">执行一次衰减扫描</button>
+            <button id="runBackup" class="btn">导出 JSON 备份</button>
+            <button id="reloadStats" class="btn">刷新总览</button>
+          </div>
+          <pre id="maintResult" class="mono"></pre>
+        </div>
+        <div class="panel">
+          <h3>已有备份</h3>
+          <div id="backupList" class="backup-list"></div>
+        </div>
+        <div class="panel warn">
+          <h3>与其它插件共存</h3>
+          <ul>
+            <li>本插件与 Humanizer 零代码耦合，可同时启用；两者注入位置不同（Humanizer 改系统提示与临时块，本插件注入画像到系统提示末尾、记忆到用户消息前）。</li>
+            <li>若 AstrBot 自带的「群聊上下文感知」与本插件同时开启，会出现双份历史注入。建议在框架配置中关闭其中之一。</li>
+            <li>本插件使用独立 SQLite，不与 angel_memory 共用数据。迁移方案见 README。</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+  </div>
+  <script src="./app.js"></script>
+  <script src="./starmap.js"></script>
+  <script src="./library.js"></script>
+  <script src="./configview.js"></script>
+</body>
+</html>

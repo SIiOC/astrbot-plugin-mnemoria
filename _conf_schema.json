@@ -1,0 +1,619 @@
+{
+  "provider_id": {
+    "type": "string",
+    "description": "[核心模型] 用于记忆抽取与整理的 LLM 提供商 ID",
+    "hint": "建议使用具备思考能力的模型。留空则关闭自动抽取，仅保留工具主动存取与账本功能。",
+    "_special": "select_provider",
+    "default": ""
+  },
+  "retrieval": {
+    "type": "object",
+    "description": "[检索] 向量化与重排配置",
+    "hint": "检索采用「向量 + 关键词(BM25) + 时间近因」三路 RRF 融合，任一通道不可用会自动降级，不影响其余通道。",
+    "items": {
+      "embedding_provider_id": {
+        "type": "string",
+        "description": "嵌入模型提供商 ID（可选）",
+        "default": "",
+        "hint": "留空则只用关键词与时间通道。注意 DashScope 系单请求上限较小，本插件按 20 条分片。"
+      },
+      "rerank_provider_id": {
+        "type": "string",
+        "description": "重排模型提供商 ID（可选）",
+        "default": "",
+        "hint": "留空则沿用框架已挂的重排；再不可用则跳过重排。"
+      },
+      "candidate_pool": {
+        "type": "int",
+        "description": "各通道候选池大小",
+        "default": 40,
+        "hint": "单通道召回条数上限，越大越全但越慢。建议 20-80。"
+      },
+      "rrf_k": {
+        "type": "int",
+        "description": "RRF 融合常数 k",
+        "default": 60,
+        "hint": "业界常用 60。分数 = Σ 1/(k + rank)。一般无需修改。"
+      },
+      "query_expansion": {
+        "type": "bool",
+        "description": "查询扩展（livingmemory 同思想）",
+        "default": true,
+        "hint": "用户的话很短时（如「怎么样？」），把本会话最近几条用户消息补进关键词通道提升相关性。语义通道不受影响。"
+      },
+      "per_type_limit": {
+        "type": "int",
+        "description": "同类记忆召回条数上限（angel 链式回忆同思想）",
+        "default": 0,
+        "hint": "大于 0 时每种记忆类型先各取该条数，保证召回多样性，防单一类型霸榜；未选满的位次再用其余高相关条目补齐，不会漏记忆。建议 3-5；设 0 关闭（默认）。"
+      },
+      "semantic_floor": {
+        "type": "float",
+        "description": "显式搜索的语义相似度地板",
+        "default": 0.3,
+        "hint": "仅作用于 /记忆搜索 等显式搜索：语义余弦低于该值的条目不进候选，「搜不到就明说搜不到」而不是硬塞最近似的垃圾。校准数据：同义改写 0.68-0.84、不同事实最高 0.875，故地板不宜超过 0.5。注入路径不受影响（有时间近因兜底）。设 0 关闭。"
+      },
+      "age_decay_rate": {
+        "type": "float",
+        "description": "检索年龄衰减率（新鲜度惩罚）",
+        "default": 0.01,
+        "hint": "v0.2.4 新增（对齐 angel _apply_time_decay）：被动记忆的召回分按「记忆本身的年龄」乘 1/(1+rate*天数)。0.01≈100 天半分、0.05≈20 天半分；矛盾记忆并列时新条天然靠前。不影响主动记忆。设 0 关闭。"
+      },
+      "vector_backfill_enabled": {
+        "type": "bool",
+        "description": "启用向量惰性回填",
+        "default": true,
+        "hint": "v0.2.14：嵌入模型换型后，检索/去重发现异维向量只入队，夜间批量补嵌；关闭后保留现有跳过行为，不调用回填接口。"
+      },
+      "vector_backfill_daily_limit": {
+        "type": "int",
+        "description": "向量惰性回填每日上限",
+        "default": 200,
+        "hint": "每天最多补嵌多少条存量记忆，防模型换型后一次性打爆 API 配额。设 0 禁用夜间消费；建议 100-300。"
+      }
+    }
+  },
+  "admission": {
+    "type": "object",
+    "description": "[写入门] 记忆准入与去重",
+    "hint": "控制「什么才配被记下来」。这是防止垃圾记忆与自我回声的关键闸门。",
+    "items": {
+      "alpha_threshold": {
+        "type": "float",
+        "description": "准入门槛 α（信息价值评分）",
+        "default": 0.4,
+        "hint": "抽取时模型给出的价值分低于该值即拒收；套话、寒暄、纯情绪附和默认归零。范围 0.2-0.8。"
+      },
+      "dedup_threshold": {
+        "type": "float",
+        "description": "向量去重相似度阈值",
+        "default": 0.92,
+        "hint": "⚠️ 勿单独调低：真实嵌入实测（scripts/calibrate_embeddings.py）。nemotron 分布：同义改写 0.68-0.84、不同事实峰值 0.875、模板编号高达 0.97。dashscope qwen3.7-flash 分布（2026-09-23 实测）：同义改写 0.88-0.96（跨过 0.92，由文本二次确认放行/拦截）、不同事实峰值 0.86（仍低于 0.92 不误触）、模板编号 0.96 由仅编号守卫拦截。0.92 + 文本二次确认 + 仅编号守卫是双嵌入器下都成立的结构，单靠向量阈值不可能安全。"
+      },
+      "text_dedup_similarity": {
+        "type": "float",
+        "description": "文本级近重复阈值（同事实换措辞的兜底判定）",
+        "default": 0.8,
+        "hint": "v0.2.3 新增：字符 Jaccard（去重前会剥掉 openid/数字ID 等身份前缀，避免长身份把不同事实的相似度抬高）≥该值即判重复、走强化。线上实测同事实换措辞 0.81~0.92、不同事实 ≤0.73，0.80 是校准值。调高更保守（允许更多重复），调低更激进（有误强化风险）。"
+      },
+      "conservative_fallback_similarity": {
+        "type": "float",
+        "description": "裁决不可用时的保守强化向量阈值",
+        "default": 0.9,
+        "hint": "v0.2.3 新增；v0.2.11 起默认 0.85→0.90（dashscope qwen3.7-flash 2026-09-23 实测「不同事实」峰值 0.86，旧值 0.85 会在裁决超时时误强并不同事实丢新事实；同义改写 0.88-0.96 落在 0.90 之上仍被防重）。写入裁决超时/失败/输出不可解析时，若首位候选的向量相似度 ≥该值（或文本 Jaccard ≥上面的文本阈值），保守强化该候选而不是裸新增；达不到才普通新增：宁可重复也不丢事实。⚠️ 换嵌入器必须重跑 calibrate_embeddings.py 并重新评估该值。"
+      },
+      "deny_assistant_claims": {
+        "type": "bool",
+        "description": "拒绝「AI 代用户立论」的记忆",
+        "default": true,
+        "hint": "抽取时要求模型为每条记忆与画像标注 speaker（谁说出口的），标注为 assistant 的条目在本开关开启时拒收（v0.1.2 接线记忆、v0.1.3 覆盖画像，拒收记入日志）。双层防线：提示词约束为主，本闸门兜底。注意模型偶发误标会让个别用户事实被拒——日志可见，属预期行为。"
+      },
+      "assistant_claim_policy": {
+        "type": "string",
+        "description": "assistant 来源记忆的分级准入（v0.1.5）",
+        "options": [
+          "reject_all",
+          "allow_relationship",
+          "allow_all"
+        ],
+        "default": "reject_all",
+        "hint": "reject_all：拒收全部 assistant 条目（旧行为，等价 deny_assistant_claims=true）。allow_relationship：放行关系/互动/约定类——type 为 event/emotional，或内容含「我会/约定/称呼」等互动特征；纯「AI 代用户立论」的事实仍拒、套话与密钥照旧拦截，长期陪伴场景推荐。allow_all：全部放行，不推荐。本键设置后优先于 deny_assistant_claims；画像入口不受本键影响（仍只看 deny_assistant_claims，保守设计）。"
+      },
+      "quarantine_max": {
+        "type": "int",
+        "description": "隔离区条目上限（memoripy 隔离区同款）",
+        "default": 200,
+        "hint": "疑似密钥/元指令不直接丢弃而是隔离待审（面板可恢复）。超过此数丢弃最旧的隔离条目，防被拒内容无限累积。设 0 不限制。"
+      },
+      "min_message_length": {
+        "type": "int",
+        "description": "触发抽取的最小字符数",
+        "default": 5,
+        "hint": "过短的消息不进入抽取管线。"
+      },
+      "write_adjudication_enabled": {
+        "type": "bool",
+        "description": "启用记忆写入裁决（v0.2.0）",
+        "default": true,
+        "hint": "去重阈值以下、合并阈值以上的「同事实换措辞」交给 LLM 判 add/reinforce/merge/update/noop；无相似候选时不调用（不额外花钱）。超时/坏输出/低置信自动回退普通新增。关闭则完全回到旧行为。"
+      },
+      "merge_candidate_similarity": {
+        "type": "float",
+        "description": "写入裁决的候选召回相似度下限",
+        "default": 0.78,
+        "hint": "向量余弦低于该值不送裁决。校准数据：同义改写 0.68-0.84，故建议 0.75-0.82；调低会多花调用，调高会漏合并。"
+      },
+      "slot_candidate_enabled": {
+        "type": "bool",
+        "description": "写入裁决追加槽位候选（tag 重叠召回）",
+        "default": true,
+        "hint": "v0.2.4 新增：向量相似度地板之外，把与新记忆共享标签的旧记忆也送入裁决（最多 +2 条）。「改口」型矛盾（如所在地/职业变更）向量上并不相似，没有此通道时永远进不了裁决视野，新旧矛盾会并存。建议保持开启。"
+      },
+      "max_similar_candidates": {
+        "type": "int",
+        "description": "单次裁决最多送几条候选",
+        "default": 3,
+        "hint": "候选越多判断越准但提示词越长。建议 2-5。"
+      },
+      "adjudication_timeout_seconds": {
+        "type": "int",
+        "description": "写入裁决单次调用超时基线（秒）",
+        "default": 20,
+        "hint": "v0.2.5 起为自适应基线：超时一次翻倍、成功一次回收 2%，封顶见下方「超时可自适应放宽到的上限」。超时按「无裁决」处理，回退保守策略，不阻断抽取。推理型模型建议保持默认让插件自行学习，或手动调到 45~60。"
+      },
+      "adjudication_timeout_max": {
+        "type": "int",
+        "description": "写入裁决超时可自适应放宽到的上限（秒）",
+        "default": 90,
+        "hint": "v0.2.5 新增。推理型提供商（如 mimo-pro 系列）出解常需 30~60s，上限给足裁决才能真正生效；不得超过 LLM 桥接层 120s 硬超时。"
+      },
+      "adjudication_breaker_threshold": {
+        "type": "int",
+        "description": "裁决熔断的连续失败次数",
+        "default": 5,
+        "hint": "v0.2.5 新增。连续超时（已达上限仍超时）或连续异常满此次数后暂停裁决一段时间，期间写入直接走保守回退，避免坏掉的提供商把每次写入都卡满一个超时周期。"
+      },
+      "adjudication_breaker_cooldown_seconds": {
+        "type": "int",
+        "description": "裁决熔断冷却时长（秒）",
+        "default": 600,
+        "hint": "v0.2.5 新增。熔断期间不调用裁决 LLM；冷却结束后自动恢复试探。"
+      },
+      "min_adjudication_confidence": {
+        "type": "float",
+        "description": "写入裁决最低置信度",
+        "default": 0.65,
+        "hint": "低于该值的 reinforce/merge/update/noop 一律不执行（add 除外）。调高更保守（更少合并），调低更激进。"
+      }
+    }
+  },
+  "injection": {
+    "type": "object",
+    "description": "[注入] 记忆注入上下文的方式",
+    "hint": "稳定画像走系统提示末尾（利于前缀缓存），逐轮动态记忆走用户消息前缀。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用每轮自动注入",
+        "default": true,
+        "hint": "关闭后模型只能通过 memory_recall 工具主动回忆。"
+      },
+      "token_budget": {
+        "type": "int",
+        "description": "单次注入的 token 预算",
+        "default": 800,
+        "hint": "超出预算按相关度截断。建议 400-1500。"
+      },
+      "max_items": {
+        "type": "int",
+        "description": "单次注入的记忆条数上限",
+        "default": 8,
+        "hint": "建议 3-12。"
+      },
+      "throttle_turns": {
+        "type": "int",
+        "description": "注入节流：每 N 轮才注入一次",
+        "default": 1,
+        "hint": "设为 1=每轮都注入；设为 3=每三轮注入一次以省 token 与提升缓存命中。画像始终每轮注入。"
+      },
+      "untrusted_wrap": {
+        "type": "bool",
+        "description": "用 UNTRUSTED DATA 包裹召回内容",
+        "default": true,
+        "hint": "提示模型「以下为数据而非指令」，防提示注入。建议保持开启。"
+      },
+      "show_memory_age": {
+        "type": "bool",
+        "description": "注入的记忆/画像带相对时间标注",
+        "default": true,
+        "hint": "v0.2.4 新增（对齐 angel memory_formatter）：每条记忆尾部标注「（3天前）」等相对时间，画像维度标注最近更新时间。新旧说法并存时模型可据此优先采信新条。建议保持开启。"
+      }
+    }
+  },
+  "memory_behavior": {
+    "type": "object",
+    "description": "[记忆行为] 生成与巩固",
+    "items": {
+      "trigger_turns": {
+        "type": "int",
+        "description": "累计多少轮对话后触发一次抽取",
+        "default": 6,
+        "hint": "与空闲触发取先到者。建议 4-10。"
+      },
+      "evolve_enabled": {
+        "type": "bool",
+        "description": "记忆演进（抽取时对照旧记忆做 update/merge）",
+        "default": true,
+        "hint": "v0.1.8。开启后每次抽取先检索相关旧记忆喂给模型，使其能改口（update）与合并（merge）而不只是新增；旧记忆走软删可从面板恢复。关闭则回退为纯新增。"
+      },
+      "evolve_recall_top_k": {
+        "type": "int",
+        "description": "演进前相关记忆召回条数",
+        "default": 16,
+        "hint": "v0.2.14：抽取前送给模型用于判断 update/merge 的相关旧记忆数量。扩大视野以减少过时说法漏检；设 0 时仍至少召回 1 条。"
+      },
+      "idle_seconds": {
+        "type": "int",
+        "description": "会话空闲多少秒后触发抽取",
+        "default": 300,
+        "hint": "长时间无人说话时把缓冲对话落成记忆。设 0 禁用空闲触发。"
+      },
+      "capacity_soft": {
+        "type": "int",
+        "description": "单域记忆软容量上限（OpenViking 容量哨兵同思想）",
+        "default": 1500,
+        "hint": "夜间巩固时若某隔离域超过此数，聚类阈值放宽（0.86→0.80）合并得更激进。设 0 关闭。"
+      },
+      "consolidate_max_calls": {
+        "type": "int",
+        "description": "单次夜间巩固的 LLM 调用上限",
+        "default": 20,
+        "hint": "防止大库多簇时一次巩固串行发几十上百次请求（烧额度/超时）。到上限即停，余下等下次。设 0 不限制。"
+      },
+      "consolidation_text_floor": {
+        "type": "float",
+        "description": "夜间巩固聚类的文本确认下限",
+        "default": 0.55,
+        "hint": "v0.2.8 止血新增：夜间巩固把高余弦记忆并簇之前，还必须通过字符 n-gram 相似度≥该值的文本确认——本嵌入器对「同主语不同事实」的余弦普遍 >0.86，只看向量会把不相干的记忆滚成巨型复合条目（线上实测单簇吞过 214 条）。与写入守卫同源逻辑。"
+      },
+      "consolidation_max_size": {
+        "type": "int",
+        "description": "单次巩固合并的最大簇大小",
+        "default": 8,
+        "hint": "v0.2.8 新增。一簇最多几条记忆进同一次巩固（防误聚类滚雪球、防超长提示词烧额度）。"
+      },
+      "max_extract_per_turn": {
+        "type": "int",
+        "description": "单轮抽取最多写入几条记忆（v0.2.3）",
+        "default": 6,
+        "hint": "angel ImpressionDepth 同思想：每轮生成量有上限。提示词已限制，代码按 alpha 降序兜底截断，优先高价值条目，防边际内容挤占写入预算。"
+      },
+      "passive_strength": {
+        "type": "int",
+        "description": "被动记忆初始强度",
+        "default": 10,
+        "hint": "影响被动记忆的存活时间。主动记忆（工具写入）不受影响。"
+      },
+      "permanent_allow_tool": {
+        "type": "bool",
+        "description": "允许 memory_remember 工具写入 permanent 永生记忆",
+        "default": true,
+        "hint": "v0.2.4 新增，默认 true（保持 v0.1.7 以来语义：模型显式 permanent 即永生）。v0.2.4 起工具的 update/merge 显式更正可以取代永生条目（入回收站可复活），永久矛盾已有出口；若仍担心模型滥标 permanent 可改 false，工具写入将一律降为普通记忆。"
+      },
+      "digest_hour": {
+        "type": "int",
+        "description": "夜间巩固执行时刻（0-23 时）",
+        "default": 4,
+        "hint": "低活动时归并同类记忆、更新信念。避开白天。"
+      },
+      "decay_hour": {
+        "type": "int",
+        "description": "遗忘衰减执行时刻（0-23 时）",
+        "default": 3,
+        "hint": "每天一次扫描并按热度扣减强度。"
+      }
+    }
+  },
+  "reflection": {
+    "type": "object",
+    "description": "[反思] LLM 反馈闭环（判断召回的记忆是否真被用到）",
+    "hint": "独立于抽取的 LLM 调用：把「最近对话 + 期间召回的记忆」交给模型判有用/无用，据此加分或减分。这是唯一让「老被召回却没帮上忙」的记忆降分的负反馈通道（v0.2.4 起默认开启；angel 的反思闭环默认运行）。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用反思闭环",
+        "default": true,
+        "hint": "开启后每 N 轮或空闲时做一次反思调用（花额度）。仅对「本次会话确实召回过的记忆」计分。关闭后记忆只加不减，老旧记忆容易长期占据召回位。"
+      },
+      "turn_threshold": {
+        "type": "int",
+        "description": "累计多少轮触发一次反思",
+        "default": 6,
+        "hint": "与空闲触发取先到者。建议 4-10。"
+      },
+      "idle_seconds": {
+        "type": "int",
+        "description": "会话空闲多少秒触发反思",
+        "default": 600,
+        "hint": "设 0 禁用空闲触发。"
+      },
+      "penalty_ratio": {
+        "type": "float",
+        "description": "「召回但没用」的扣分比例",
+        "default": 0.5,
+        "hint": "扣分 = consolidate_speed × 此比例。稳一点可调小（如 0.3）。"
+      }
+    }
+  },
+  "retirement": {
+    "type": "object",
+    "description": "[淘汰] LLM 终审冷记忆",
+    "hint": "夜间巩固后，把「已冷下去」的记忆交给 LLM 终审：删/留/升为长期。仅在衰减已跑过的候选里挑，失败整批保留。v0.2.0 起默认开启：审查前先落 JSON 快照，低置信/超时整批保留，删除只进回收站。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用 LLM 淘汰审查",
+        "default": true,
+        "hint": "v0.2.0 起默认开启：每晚对最冷的候选做一次终审（输入条数由下方上限控制）。审查前先落 JSON 快照，删除只进回收站；超时/坏输出/低置信整批保留，不会误删。"
+      },
+      "max_candidates": {
+        "type": "int",
+        "description": "单次审查候选上限",
+        "default": 20,
+        "hint": "最多送多少条给 LLM 审。越大越全但越贵。建议 20-60。"
+      },
+      "timeout_seconds": {
+        "type": "int",
+        "description": "淘汰审查单次调用超时（秒）",
+        "default": 60,
+        "hint": "超时整批跳过（不删任何记忆），次日窗口重试。"
+      },
+      "min_confidence": {
+        "type": "float",
+        "description": "淘汰审查整批最低置信度",
+        "default": 0.7,
+        "hint": "LLM 给出的 confidence 低于该值时，整批按 keep 处理（不删不升），保守优先。"
+      }
+    }
+  },
+  "notes": {
+    "type": "object",
+    "description": "[笔记] 笔记知识库",
+    "hint": "笔记是与「记忆」分开的知识条目：可由面板手动新增、AI 自主整理（note_create 工具），或导入 .md 文档自动分块。参与检索并注入上下文。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用笔记知识库",
+        "default": true,
+        "hint": "关闭后不检索、不注入笔记，note_create 工具也不生效。"
+      },
+      "inject_max_items": {
+        "type": "int",
+        "description": "单次注入的笔记条数上限",
+        "default": 3,
+        "hint": "建议 2-5。"
+      },
+      "chunk_max_chars": {
+        "type": "int",
+        "description": ".md 导入的单块字符上限",
+        "default": 1200,
+        "hint": "超过按段落聚合切分，尽量不切断句子。"
+      },
+      "candidate_pool": {
+        "type": "int",
+        "description": "笔记检索候选池大小",
+        "default": 20,
+        "hint": "各通道召回条数上限。"
+      },
+      "chunk_size_chars": {
+        "type": "int",
+        "description": "笔记切片目标长度（字符）",
+        "default": 700,
+        "hint": "v0.2.0 切片派生层：中文约 1 字≈1 token，700 字≈500 token。短于该值的笔记只切一片且复用整篇向量，不额外调用嵌入。"
+      },
+      "chunk_overlap_chars": {
+        "type": "int",
+        "description": "切片间的重叠字符数",
+        "default": 100,
+        "hint": "防止跨片上下文被截断，约 80 token。建议为 chunk_size_chars 的 10%-20%。"
+      },
+      "inject_max_chunks_per_note": {
+        "type": "int",
+        "description": "单次注入每篇笔记最多几个切片",
+        "default": 2,
+        "hint": "长文命中多个段落时只取最优的几片拼接，控制注入预算。"
+      },
+      "max_chunks_per_note": {
+        "type": "int",
+        "description": "单篇笔记最多保留几个切片",
+        "default": 8,
+        "hint": "超出时合并尾部（文本不丢），上限用于控制向量嵌入成本。"
+      },
+      "chunk_backfill_limit": {
+        "type": "int",
+        "description": "夜间切片回填条数上限",
+        "default": 20,
+        "hint": "每晚为多少篇存量笔记补建切片。回填幂等，失败次日继续。"
+      }
+    }
+  },
+  "runtime": {
+    "type": "object",
+    "description": "[运行] 作用域与隔离",
+    "hint": "scope 用于隔离不同记忆域（如不同人格/账号），同一 scope 内才会互相检索。",
+    "items": {
+      "default_scope": {
+        "type": "string",
+        "description": "默认记忆隔离域",
+        "default": "default",
+        "hint": "仅允许字母、数字、下划线、短横线。多账号并存时可各自设置。"
+      },
+      "user_display_name": {
+        "type": "string",
+        "description": "用户默认显示名（全局）",
+        "default": "",
+        "hint": "记忆抽取时指称用户用的名字（v0.1.6）。配置后按原样使用（需要带 ID 请自己写进值）。优先级低于按用户映射。"
+      },
+      "user_display_name_map": {
+        "type": "dict",
+        "description": "按用户指定显示名（发送者ID → 名字）",
+        "default": {},
+        "hint": "键=发送者ID（如 QQ 号），值=希望记忆里使用的名字，拼成「名字（ID）」。优先级最高。🔴不要用画像的 称呼/名字 等键做指称——现网它们被 bot 侧信息占用（名字=人设名），v0.1.5 曾因此把用户标成 bot 人设。"
+      }
+    }
+  },
+  "decay_policy": {
+    "type": "object",
+    "description": "[遗忘] 衰减与回收站",
+    "hint": "三档模型：T0 自然遗忘 / T1 召回判定 / T2 长期保留。热度公式 hotness=sigmoid(log1p(hits))·2^(-age/half_life)。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用衰减",
+        "default": true,
+        "hint": "关闭则所有记忆永存（仅推荐调试期）。"
+      },
+      "half_life_days": {
+        "type": "float",
+        "description": "热度半衰期（天）",
+        "default": 7.0,
+        "hint": "越小忘得越快。被召回的次数越多衰减越慢（访问延长）。"
+      },
+      "tier0_threshold": {
+        "type": "float",
+        "description": "T0→T1 升档阈值（useful_score）",
+        "default": 3.0,
+        "hint": "达到后从自然遗忘档升到召回判定档。"
+      },
+      "tier1_threshold": {
+        "type": "float",
+        "description": "T1→T2 升档阈值（useful_score）",
+        "default": 10.0,
+        "hint": "达到后进入长期保留档，不再自然遗忘。"
+      },
+      "consolidate_speed": {
+        "type": "float",
+        "description": "每次判定有用时 useful_score 增量",
+        "default": 2.5,
+        "hint": "建议 0.5-5.0。"
+      },
+      "forget_speed": {
+        "type": "float",
+        "description": "全局遗忘速度倍率",
+        "default": 1.0,
+        "hint": "值越大遗忘越快。"
+      },
+      "type_weights": {
+        "type": "object",
+        "description": "分型衰减权重（livingmemory 同思想）",
+        "hint": "不同类型的记忆天然寿命不同：>1 消退更快，<1 更耐久。unknown 类型按 1.0。",
+        "items": {
+          "fact": {
+            "type": "float",
+            "description": "事实类权重",
+            "default": 0.7
+          },
+          "knowledge": {
+            "type": "float",
+            "description": "知识类权重",
+            "default": 0.6
+          },
+          "skill": {
+            "type": "float",
+            "description": "技能类权重",
+            "default": 0.6
+          },
+          "event": {
+            "type": "float",
+            "description": "事件类权重",
+            "default": 1.0
+          },
+          "emotional": {
+            "type": "float",
+            "description": "情感类权重",
+            "default": 0.8
+          },
+          "task": {
+            "type": "float",
+            "description": "任务类权重（一次性，消退最快）",
+            "default": 2.0
+          }
+        }
+      },
+      "trash_retention_days": {
+        "type": "int",
+        "description": "回收站保留天数",
+        "default": 30,
+        "hint": "被衰减淘汰的记忆先入回收站，逾期才真正删除，期间可一键复活。隔离区条目同样在此列。"
+      }
+    }
+  },
+  "ledger": {
+    "type": "object",
+    "description": "[账本] 对话流水保存",
+    "hint": "逐轮保存原始对话，支持「你上次说过…」式回溯，并为夜间巩固提供素材。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用对话流水账本",
+        "default": true,
+        "hint": "关闭则不落盘原始对话（隐私优先时可关）。"
+      },
+      "retention_days": {
+        "type": "int",
+        "description": "流水保留天数",
+        "default": 180,
+        "hint": "超期流水在夜间巩固时归档压缩。"
+      },
+      "group_chats": {
+        "type": "bool",
+        "description": "是否记录群聊",
+        "default": false,
+        "hint": "默认只记私聊。群聊信息杂、隐私敏感，建议关闭。"
+      }
+    }
+  },
+  "profile": {
+    "type": "object",
+    "description": "[画像] 用户画像",
+    "hint": "从对话中提炼的稳定用户认知（称呼/喜好/关系/雷点），永不衰减。",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用用户画像",
+        "default": true,
+        "hint": "关闭则不注入画像、不提炼画像。"
+      },
+      "inject_max_items": {
+        "type": "int",
+        "description": "单次注入画像条目上限",
+        "default": 12,
+        "hint": "按重要度排序取前 N 条。"
+      },
+      "auto_extract": {
+        "type": "bool",
+        "description": "自动提炼画像",
+        "default": true,
+        "hint": "抽取记忆时一并更新画像；关闭则只接受 profile_update 工具写入。"
+      }
+    }
+  },
+  "backup": {
+    "type": "object",
+    "description": "[备份] 数据备份",
+    "items": {
+      "daily_json": {
+        "type": "bool",
+        "description": "每日导出 JSON 备份",
+        "default": true,
+        "hint": "落盘到数据目录 backups/。"
+      },
+      "keep_copies": {
+        "type": "int",
+        "description": "保留备份份数",
+        "default": 3,
+        "hint": "超出份数的旧备份自动清理。"
+      }
+    }
+  }
+}
