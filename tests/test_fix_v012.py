@@ -224,7 +224,7 @@ class TestIdleRefreshOnContentExtract:
                 # v0.1.5：末次断言改为对比刷新时刻与计数器。idle=0.001s 下
                 # 「抽取完立刻 should_extract 为 False」是天然竞态——refresh 之后
                 # 任何 >1ms 的耗时（含 v0.1.5 新增的 _user_label 画像查询）都会
-                # 再次越限，历史上靠机器快侥幸通过（E 盘实地跑复现翻车）
+                # 再次越限，历史上在开发机实地复现翻车过
                 assert eng._last_seen["s"] >= t_before, "刷新必须发生在本次抽取期间"
                 assert eng._turn_counter["s"] == 0, "计数器必须清零（轮次触发不多发）"
         finally:
