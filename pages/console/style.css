@@ -41,6 +41,7 @@ body {
   width: 30px; height: 30px; border-radius: 8px; background: var(--accent);
   color: #fff; display: grid; place-items: center; font-size: 16px;
 }
+img.logo { object-fit: cover; display: block; }
 .title em { font-style: normal; color: var(--muted); font-weight: 400; font-size: 13px; }
 .tabs { display: flex; gap: 3px; flex-wrap: wrap; row-gap: 5px; }
 .tab {
