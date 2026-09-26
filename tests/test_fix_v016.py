@@ -1,9 +1,8 @@
 """v0.1.6 指称修复 + 抽取纪律批回归测试。
 
-背景（mimo 二期计划稿核实后的 P0）：现网画像 称呼/名字 键被 bot 侧信息
-占用（名字=星棠(青鸾) 是 bot 人设），v0.1.5 的 _user_label 读它们，
-2026-09-19 13:15 实录产出「星棠(青鸾)(3141592653)在晚上活跃…」
-——用户被标成 bot 人设。
+背景（历史事故，v0.1.6 修复的 P0）：画像 称呼/名字 键可能被 bot 侧信息
+占用（名字=bot 人设名），v0.1.5 的 _user_label 读它们，曾把用户标成
+bot 人设（记忆正文出现「人设名(用户ID)在晚上活跃…」式污染）。
 
 覆盖：
 - _user_label 新解析链（config map → 全局默认 → 专用画像键 → 回退），
@@ -26,19 +25,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # ---------------------------------------------------------------- 指称修复
 class TestUserLabelP0:
     def test_bot_occupied_keys_never_used(self, make_engine):
-        """🔴 P0 回归钉子：称呼=宝宝、名字=星棠(青鸾) 存在时，
-        指称绝不能取到它们（现网实况复刻）。"""
+        """P0 回归钉子：称呼=宝宝、名字=星棠(青鸾) 存在时，
+        指称绝不能取到它们（历史事故形态复刻）。"""
         eng, store, conn = make_engine()
         try:
             store.upsert_profile("default", "3141592653", "称呼", "宝宝", 0.9)
             store.upsert_profile("default", "3141592653", "名字", "星棠(青鸾)", 0.9)
-            store.upsert_profile("default", "3141592653", "昵称", "慕慕", 0.8)
+            store.upsert_profile("default", "3141592653", "昵称", "念念", 0.8)
             store.upsert_profile("default", "3141592653", "姓名", "青鸾", 0.8)
-            store.upsert_profile("default", "3141592653", "name", "Yinxingzhu", 0.8)
+            store.upsert_profile("default", "3141592653", "name", "Xingtaoyue", 0.8)
             label = eng._user_label("default", "3141592653")
             assert label == "用户（3141592653）", \
                 f"bot 占用键必须全部失效，实际得到 {label!r}"
-            for bad in ("宝宝", "星棠", "青鸾", "慕慕", "Yinxingzhu"):
+            for bad in ("宝宝", "星棠", "青鸾", "念念", "Xingtaoyue"):
                 assert bad not in label
         finally:
             conn.close()

@@ -351,7 +351,7 @@ def _search_ledger(plugin) -> dict:
 
 
 async def _recall(plugin) -> dict:
-    """检索探针：走生产引擎的完整三路检索（向量+关键词+时间 RRF），
+    """检索探针：走生产引擎的完整四路检索（向量+关键词+标签+时间 RRF），
     与注入/工具路径同源——探针看到的就是模型看到的。不计热度。"""
     q = _q("q")
     scope = _q("scope", "default") or "default"

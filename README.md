@@ -1,6 +1,6 @@
 # 好想记住你 (mnemoria)
 
-AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 + 用户画像 + 三路混合检索注入**。
+AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 + 用户画像 + 四路混合检索注入**。
 对标主流记忆插件的**全功能**选择。
 
 零编译依赖（纯标准库 SQLite/FTS5 + 纯 Python 向量余弦），与其它插件零代码耦合。
@@ -25,6 +25,15 @@ AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 
   完全由你的插件配置决定，请自行评估所选提供商的隐私政策。
 - **内置防护**：疑似密钥/凭证的内容不入记忆库（进入隔离区待人工审）；
   注入模型的召回内容一律消毒并以 `[UNTRUSTED DATA]` 包裹；群聊记账默认关闭。
+- **群聊边界（v1.0.1 起）**：账本（`ledger.group_chats`）与注入
+  （`injection.group_inject`）对群聊默认均为关闭——群聊消息不记账、也不注入
+  画像/记忆，防止私聊内容在群聊上下文被带出；确需群聊记忆功能时分别开启。
+- **命令行脚本的网络访问**：`import_export.py --vectorize`、
+  `calibrate_embeddings.py`、`reembed_vectors.py` 会读取 AstrBot 主配置
+  （`cmd_config.json`，含各 provider 的 key）并把待嵌入文本发送到你配置的
+  嵌入提供商端点——与运行时同一来源，但请知悉这些脚本直接读取配置文件。
+- **导出与快照文件是明文**：备份 JSON、迁移导出、维护脚本的快照包含全部
+  记忆/画像/笔记明文（含隔离与已删除条目），请像对待聊天记录一样保管，勿外发。
 
 ## 功能一览
 
@@ -32,7 +41,7 @@ AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 
 |---|---|
 | **对话流水账本** | 逐轮保存原始对话（SQLite + FTS5 trigram 中文检索），支持「你上次说过…」式回溯 |
 | **自动记忆抽取** | 空闲 / 累计轮数触发，后台 LLM 提炼稳定事实，经**写入门**过滤后入库 |
-| **三路混合检索** | 向量 + 关键词(BM25) + 时间近因，RRF(k=60) 融合，可选重排 |
+| **四路混合检索** | 向量 + 关键词(BM25) + 标签锚点 + 时间近因，RRF(k=60) 融合，可选重排 |
 | **多类型分组限额** | 可选：每类记忆各取 N 条再补满，防单一类型霸榜（`retrieval.per_type_limit`） |
 | **用户画像** | 称呼 / 喜好 / 关系 / 雷点等稳定认知，**永不衰减** |
 | **热度衰减** | `hotness = sigmoid(log1p(hits)) · 2^(-age/half_life)`，三档 T0/T1/T2，回收站可恢复 |
@@ -91,7 +100,7 @@ AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 
   `deny_assistant_claims` 拒绝「AI 代用户立论」（默认开；v0.1.2 起已接线——抽取要求模型标注 speaker，
   标为 assistant 的条目被拒并记日志）；v0.2.0 新增**写入裁决**：`write_adjudication_enabled`（默认开）、
   `merge_candidate_similarity`（0.78）、`max_similar_candidates`（3）、`adjudication_timeout_seconds`（20）、
-  `min_adjudication_confidence`（0.65）。无相似候选时不调用，超时/坏输出/低置信自动回退旧行为。
+  `min_adjudication_confidence`（0.65）。无相似候选时不调用（零开销）；超时/坏输出/低置信时若首位候选足够相似则保守强化（防重复入库），否则回退普通新增——宁可重复也不丢事实。
 - **注入 (injection)**：`token_budget` 单次注入预算、`throttle_turns` 每 N 轮才注入一次（省 token / 提升缓存命中）、
   `untrusted_wrap` 用 `[UNTRUSTED DATA]` 包裹召回内容防提示注入。
 - **检索 (retrieval)**：`per_type_limit` 同类召回条数上限（默认 0=关，建议 3-5，防单一类型霸榜）。
@@ -106,7 +115,7 @@ AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 
   `inject_max_chunks_per_note`（2）、`max_chunks_per_note`（8）、`chunk_backfill_limit`（20，夜间回填）。
 - **遗忘 (decay_policy)**：`half_life_days` 半衰期、`tier0/1_threshold` 三档阈值、
   `trash_retention_days` 回收站保留天数（默认 30，可恢复）。
-- **账本 (ledger)**：`group_chats` 默认**关**（只记私聊，隐私优先）。
+- **账本 (ledger)**：`group_chats` 默认**关**（只记私聊，隐私优先）。注入同理：`injection.group_inject` 默认关，群聊消息不注入画像/记忆（v0.2.16 起）。
 - **运行 (runtime)**：`default_scope` 记忆隔离域。
 
 > 记忆的手动维护（新增 / 编辑 / 主动↔被动切换 / 删除）全部在**插件页控制台**完成，无需改配置。
@@ -169,9 +178,10 @@ python tests/framework_sim.py       # 真实框架对象仿真（钩子/TextPart
 
 ## 从 angel_memory 迁移（可选）
 
-**只读保证（已实测）**：迁移 = 导出副本，不是搬走。脚本以 SQLite 只读模式（`mode=ro`）
+**只读保证**：迁移 = 导出副本，不是搬走。脚本以 SQLite 只读模式（`mode=ro`）
 打开 angel 数据库，全程不写不改不删；停用 angel 也只是禁用插件，其数据文件原样保留，
-随时可重新启用回滚。已用 SHA256 前后校验和验证 angel 库迁移后逐字节不变。
+随时可重新启用回滚。作者迁移时以 SHA256 前后校验和运动核验过 angel 库逐字节不变
+（脚本自身只读；想复核可用 `certutil -hashfile <db> SHA256` 等工具对比）。
 
 ```bash
 # 1) 只读导出（不动 angel 任何数据）
@@ -211,7 +221,7 @@ astrbot_plugin_mnemoria/
 │   ├── store.py         # SQLite 数据访问（记忆 / 笔记 / 账本 / 画像）
 │   ├── db.py            # schema 与迁移（v3：新增 notes 表）
 │   ├── admission.py     # 写入门（α 门、防回声、去重+守卫）
-│   ├── retrieve.py      # 三路检索 + RRF + 分组限额
+│   ├── retrieve.py      # 四路检索 + RRF + 分组限额
 │   ├── notes.py         # 笔记库：.md 分块解析 + 混合检索
 │   ├── scoring.py       # 热度衰减与分档（纯函数）
 │   ├── bridge.py        # embedding / rerank 框架桥接（惰性读配置）
@@ -233,9 +243,13 @@ astrbot_plugin_mnemoria/
 
 完整版本史与孵化期事故记录见 [CHANGELOG.md](CHANGELOG.md)。摘要：
 
+- 1.0.1 — 发布审查修复版（2026-09-26）：群聊注入隐私门控（默认关）、
+  CLI 脚本加固（清晰报错/列候选/scope 对齐）、LICENSE 附录与隐私披露补全。
+
 - 1.0.0 — 首个公开发布版（2026-09-24）：发布树经确定性流水线生成，
   零预设内容，与作者内部版本自此分叉；功能快照 = 内部 0.2.15。
 
+- 0.2.16 — 发布审查修复批（群聊注入门控 + CLI 脚本加固 + 文档合规）
 - 0.2.15 — v0.2.14 收束审查合并批（undo 护栏血缘方向精化等）
 - 0.2.14 — 记忆质量修复：向量混部回填、惰性回填队列、过时记忆治理
 - 0.2.12/0.2.13 — 星座星图落地与大数据量降噪

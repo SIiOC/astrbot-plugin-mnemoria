@@ -40,8 +40,8 @@ class TestDeriveTags:
         assert "3141592653" in tags, "正文里的数字 ID 要作为锚点"
 
     def test_wechat_openid_anchor(self):
-        tags = derive_tags("用户模z0xw804vjXb1VAlfuUxb-TY2hSYM@im.wechat在问插件")
-        assert "z0xw804vjXb1VAlfuUxb-TY2hSYM@im.wechat" in tags
+        tags = derive_tags("用户模z0xw7aKp3mZq9cW5nF2rT8gB4xDH@im.wechat在问插件")
+        assert "z0xw7aKp3mZq9cW5nF2rT8gB4xDH@im.wechat" in tags
 
     def test_date_like_number_is_not_identity(self):
         tags = derive_tags("20260920 那天聊了跑步")

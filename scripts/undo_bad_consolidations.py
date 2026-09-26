@@ -170,11 +170,16 @@ def apply(conn: sqlite3.Connection, rollbacks: list[dict], retire: list[str],
                  r["keeper"], f"误合并回滚（sim={r['sim']}，无事件佐证）", 1.0,
                  "undo_bad_consolidations.py", now))
         for kid in retire:
+            # v0.2.16（审查 D6）：keeper 退休事件的 scope 按行实取，
+            # 不再硬编码 "default"（跨域时审计归属错误）
+            krow = conn.execute(
+                "SELECT scope FROM memories WHERE id=?", (kid,)).fetchone()
+            kscope = str(krow["scope"]) if krow else "default"
             conn.execute(
                 "INSERT INTO memory_events(action, scope, source_ids_json, "
                 "target_id, reason, confidence, provider, created_at) "
                 "VALUES(?,?,?,?,?,?,?,?)",
-                ("undo_consolidation", "default", "[]", kid,
+                ("undo_consolidation", kscope, "[]", kid,
                  "误拼 keeper 退休入回收站（可恢复）", 1.0,
                  "undo_bad_consolidations.py", now))
         conn.commit()

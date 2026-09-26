@@ -1,7 +1,7 @@
 """嵌入相似度校准工具：用真实嵌入端点测量语义相似度分布，为去重/聚类阈值提供依据。
 
 用法（需 AstrBot 配置里已有可用的 embedding 提供商）：
-    python scripts/calibrate_embeddings.py --provider-id nvidia_embedding
+    python scripts/calibrate_embeddings.py --provider-id <嵌入提供商id>
 
 最近一次实测记录（2026-09-15，nvidia/nemotron-3-embed-1b，2048 维，直连）：
     真重复      均值 1.000  [1.000, 1.000]   → 指纹层拦截
@@ -43,9 +43,13 @@ import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
-# AstrBot 主配置路径：ASTRBOT_CMD_CONFIG 环境变量或 --config 必填
-# （cmd_config.json 在 <AstrBot>/data/ 下，含各 provider 的 key）
-CFG_PATH = Path(os.environ.get("ASTRBOT_CMD_CONFIG", ""))
+# AstrBot 主配置：ASTRBOT_CMD_CONFIG 环境变量或 --config 必填。
+# Path("") 会归一化成当前目录、.exists() 恒真——用 None 表达"未配置"
+# （v0.2.16 审查 D1：空串默认让友好报错成死代码）。
+CFG_PATH = None
+_env_cfg = os.environ.get("ASTRBOT_CMD_CONFIG", "").strip()
+if _env_cfg:
+    CFG_PATH = Path(_env_cfg)
 
 PAIRS = [
     ("同义改写", "用户的名字是张三", "用户叫张三"),
@@ -71,13 +75,20 @@ PAIRS = [
 
 
 def load_provider(provider_id: str) -> dict:
-    if not CFG_PATH.exists():
-        # v0.1.2：默认值是开发机路径，异机直接跑会得到难懂的 FileNotFoundError
+    if CFG_PATH is None or not CFG_PATH.exists():
+        where = "ASTRBOT_CMD_CONFIG" if CFG_PATH is None else str(CFG_PATH)
         raise SystemExit(
-            f"未找到 AstrBot 主配置：{CFG_PATH}\n"
+            f"未找到 AstrBot 主配置：{where}\n"
             "请设置 ASTRBOT_CMD_CONFIG 环境变量，或用 --config <path> 指定 cmd_config.json。"
         )
     cfg = json.loads(CFG_PATH.read_text(encoding="utf-8-sig"))
+    if not provider_id:
+        candidates = [str(g.get("id") or "") for g in cfg.get("provider", [])
+                      if g.get("embedding_api_key")]
+        raise SystemExit(
+            "未指定嵌入提供商。请用 --provider-id 从以下候选中选择：\n  "
+            + ("\n  ".join(candidates) if candidates else "（配置里没有带 embedding_api_key 的提供商）")
+        )
     for grp in cfg.get("provider", []):
         if grp.get("id") == provider_id:
             if not grp.get("embedding_api_key"):
@@ -130,10 +141,10 @@ def cos(a: list[float], b: list[float]) -> float:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider-id", default="nvidia_embedding")
+    ap.add_argument("--provider-id", default="",
+                    help="嵌入提供商 id（必填；不传时列出配置内可用候选）")
     ap.add_argument("--config", default=None,
-                    help="AstrBot 主配置路径（默认取 ASTRBOT_CMD_CONFIG 环境变量，"
-                         "再退回本机部署路径）")
+                    help="AstrBot 主配置路径（或设 ASTRBOT_CMD_CONFIG 环境变量）")
     args = ap.parse_args()
 
     global CFG_PATH

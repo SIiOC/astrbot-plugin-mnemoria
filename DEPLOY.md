@@ -142,6 +142,8 @@ WebUI → 插件 → 好想记住你 → 禁用。angel 从未动过，零损失
 
 ## 部署前最后一件事
 
-E 盘有外部会话在实时编辑的历史（见记忆 [[workspace-files-change-mid-session]]）——
-部署复制前先看一眼运行实例 `data/plugins/` 下没有同名目录、`astrbot_plugin_livingmemory`
-等第三方记忆插件没有同时启用（记忆确认过当前只跑了 angel）。
+- 运行实例 `data/plugins/` 下若已存在同名目录（旧版本/手动复制过），先备份
+  其数据目录（`plugin_data/astrbot_plugin_mnemoria/`）再覆盖，避免新旧文件混杂；
+- 若同时启用其它记忆插件（angel_memory / livingmemory 等），建议先在 WebUI
+  禁用其一——多个记忆插件同时注入会造成重复上下文
+  （见 README「与其它插件共存」）。

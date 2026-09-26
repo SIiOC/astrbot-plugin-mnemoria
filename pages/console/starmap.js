@@ -9,7 +9,7 @@
    星座总数收敛到 40 座以内，单簇上限 24）——v7 设计稿里
  * 「core/graph.py 同趟产出簇标签」的落点仍是后续优化，当前命名取代表记忆前缀。
  * 边计算在后台线程 + 磁盘缓存，未就绪时先渲染星点并轮询补线（补线后重聚簇）。
- * 探针走生产 /recall（三路 RRF，与模型看到的同源）。
+ * 探针走生产 /recall（四路 RRF，与模型看到的同源）。
  */
 (function () {
   "use strict";
@@ -96,7 +96,7 @@
       cl.big = cl.members.length >= 3;
       /* 命名过渡方案：取最强成员正文前 5 字；剥掉「名字（聊天ID）」式前缀——
          否则线上数据的名字全变成 "小明（z0xw…" 这种残句（簇标签的正式
-         落点是 graph.py 同趟产出，见 设计说明.md 生产落地路径） */
+         落点是 graph.py 同趟产出，属后续优化） */
       var nm = cl.rep.content.replace(/^用户/, "");
       nm = nm.replace(/^[^（）]{1,16}（[^）]*）/, "").replace(/^[的，。：:、\s]+/, "");
       cl.name = cl.members.length >= 2 ? (nm.slice(0, 5) || cl.rep.content.slice(0, 5)) : null;
@@ -917,7 +917,7 @@
     cam.tyaw = -target._ang + Math.PI / 2; cam.vyaw = 0;
   }
 
-  /* ---------------- 探针（真实三路 RRF） ---------------- */
+  /* ---------------- 探针（真实四路 RRF） ---------------- */
   async function runProbe() {
     var q = MN.$("smProbe").value.trim();
     if (!q) { probe = null; var box0 = MN.$("smProbeResult"); box0.className = "sm-probe-result"; return; }

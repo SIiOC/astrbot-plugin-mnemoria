@@ -25,7 +25,7 @@
         { k: "admission.quarantine_max", t: "range", min: 0, max: 1000, step: 10, hint: "隔离区上限，超限丢最旧" }
       ] },
     { id: "g_retrieval", name: "检索", tag: "retrieval",
-      desc: "「向量 + 关键词(BM25) + 时间近因」三路 RRF 融合，任一通道命中即可召回。",
+      desc: "「向量 + 关键词(BM25) + 标签锚点 + 时间近因」四路 RRF 融合，任一通道命中即可召回。",
       fields: [
         { k: "retrieval.embedding_provider_id", t: "select", opts: "auto", hint: "嵌入模型（换库需重嵌）" },
         { k: "retrieval.rerank_provider_id", t: "select", opts: "auto", hint: "留空=不重排" },
@@ -185,13 +185,13 @@
          退化为文本输入，不把人困在空下拉里 */
       var plist = providerOptions(f.k);
       if (plist.length) {
-        ctl = '<select data-k="' + f.k + '"></select>';
+        ctl = '<select data-k="' + MN.esc(f.k) + '"></select>';
       } else {
-        ctl = '<input type="text" value="' + (v == null ? "" : String(v)) + '" data-k="' + f.k
+        ctl = '<input type="text" value="' + MN.esc(v) + '" data-k="' + MN.esc(f.k)
           + '" placeholder="模型 ID（宿主模型列表不可用，请手输）">';
       }
     } else {
-      ctl = '<input type="text" value="' + (v == null ? "" : String(v)) + '" data-k="' + f.k + '">';
+      ctl = '<input type="text" value="' + MN.esc(v) + '" data-k="' + MN.esc(f.k) + '">';
     }
     var lab = LABELS[f.k] || f.k;
     return '<div class="cfg-field"><div class="cfg-lab"><b>' + lab + '</b><code class="cfg-key">' + f.k + "</code>"
@@ -248,7 +248,7 @@
       if (cur && opts.indexOf(cur) < 0) opts.unshift(cur);
       s.innerHTML = opts.map(function (o) {
         var label = o === "" ? "（留空）" : o;
-        return '<option value="' + (o == null ? "" : String(o)) + '"' + (o == cur ? " selected" : "") + ">" + label + "</option>";
+        return '<option value="' + MN.esc(o) + '"' + (o == cur ? " selected" : "") + ">" + MN.esc(label) + "</option>";
       }).join("");
       s.addEventListener("change", function () { markDirty(k, s.value); });
     });

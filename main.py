@@ -1,6 +1,6 @@
 """好想记住你（mnemoria）—— AstrBot 长期记忆插件。
 
-提供：对话流水账本 / 自动记忆抽取与衰减 / 三路混合检索注入 / 用户画像 / 主动存取工具。
+提供：对话流水账本 / 自动记忆抽取与衰减 / 四路混合检索注入 / 用户画像 / 主动存取工具。
 对标主流记忆插件的**全功能**选择，与其它插件零代码耦合。
 """
 
@@ -241,6 +241,16 @@ class MnemoriaPlugin(Star):
                 self.logger.debug("记录用户轮次失败: %s", exc)
 
         if not self.config.get("injection.enabled", True):
+            return
+        # v0.2.16：群聊隐私门控——与 ledger.group_chats=false 的语义对齐
+        # （群聊默认不碰）。此前只挡记账不挡注入，群聊消息仍会把发送者的
+        # 画像与共享域记忆注入模型上下文（2026-09-26 发布审查 P1，测试钉
+        # test_fix_v0216）。需要群聊也注入时显式开 injection.group_inject。
+        try:
+            is_group = bool(event.get_group_id())
+        except Exception:  # noqa: BLE001
+            is_group = False
+        if is_group and not self.config.get("injection.group_inject", False):
             return
         try:
             # 画像：稳定块，放系统提示末尾（利于前缀缓存）
