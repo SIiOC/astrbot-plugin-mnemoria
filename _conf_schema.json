@@ -165,7 +165,7 @@
         "type": "int",
         "description": "写入裁决超时可自适应放宽到的上限（秒）",
         "default": 90,
-        "hint": "v0.2.5 新增。推理型提供商（如 mimo-pro 系列）出解常需 30~60s，上限给足裁决才能真正生效；不得超过 LLM 桥接层 120s 硬超时。"
+        "hint": "v0.2.5 新增。推理型提供商出解常需 30~60s，上限给足裁决才能真正生效；不得超过 LLM 桥接层 120s 硬超时。"
       },
       "adjudication_breaker_threshold": {
         "type": "int",

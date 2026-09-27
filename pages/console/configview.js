@@ -41,7 +41,9 @@
         { k: "injection.token_budget", t: "range", min: 100, max: 2000, step: 50 },
         { k: "injection.max_items", t: "range", min: 1, max: 30, hint: "每轮注入条数上限" },
         { k: "injection.throttle_turns", t: "range", min: 0, max: 10, hint: "每 N 轮才注入一次" },
-        { k: "injection.untrusted_wrap", t: "bool", hint: "用 UNTRUSTED 包裹记忆条目" }
+        { k: "injection.untrusted_wrap", t: "bool", hint: "用 UNTRUSTED 包裹记忆条目" },
+        { k: "injection.show_memory_age", t: "bool", hint: "记忆/画像带相对时间标注" },
+        { k: "injection.group_inject", t: "bool", warn: true, hint: "群聊也注入画像/记忆（默认关，隐私优先）" }
       ] },
     { id: "g_decay", name: "衰减", tag: "decay_policy",
       desc: "三档模型：T0 自然遗忘 / T1 召回判定 / T2 长期保留。",
@@ -133,6 +135,8 @@
     "injection.max_items": "每轮注入上限",
     "injection.throttle_turns": "注入节流轮数",
     "injection.untrusted_wrap": "UNTRUSTED 包裹",
+    "injection.show_memory_age": "时间标注",
+    "injection.group_inject": "群聊注入",
     "decay_policy.enabled": "启用衰减",
     "decay_policy.half_life_days": "半衰期（天）",
     "decay_policy.tier0_threshold": "T0 遗忘阈值",

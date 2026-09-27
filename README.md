@@ -115,7 +115,7 @@ AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 
   `inject_max_chunks_per_note`（2）、`max_chunks_per_note`（8）、`chunk_backfill_limit`（20，夜间回填）。
 - **遗忘 (decay_policy)**：`half_life_days` 半衰期、`tier0/1_threshold` 三档阈值、
   `trash_retention_days` 回收站保留天数（默认 30，可恢复）。
-- **账本 (ledger)**：`group_chats` 默认**关**（只记私聊，隐私优先）。注入同理：`injection.group_inject` 默认关，群聊消息不注入画像/记忆（v0.2.16 起）。
+- **账本 (ledger)**：`group_chats` 默认**关**（只记私聊，隐私优先）。注入同理：`injection.group_inject` 默认关，群聊消息不注入画像/记忆（v1.0.1 起）。
 - **运行 (runtime)**：`default_scope` 记忆隔离域。
 
 > 记忆的手动维护（新增 / 编辑 / 主动↔被动切换 / 删除）全部在**插件页控制台**完成，无需改配置。

@@ -88,8 +88,8 @@ class MemoryEngine:
         self._cached_vectors: list[tuple[str, list[float]]] = []
         self._vector_cache_expected_dim = 0
         self._vectors_dirty = True
-        # v0.2.5：写入裁决自适应超时 + 熔断。推理型提供商（实测 mimo-v2.5-pro
-        # 约半数裁决响应 >20s）撞上固定 20s 超时时，已发出的请求在服务端继续
+        # v0.2.5：写入裁决自适应超时 + 熔断。推理型提供商（实测约半数裁决
+        # 响应 >20s）撞上固定 20s 超时时，已发出的请求在服务端继续
         # 计费，本地却拿不到 merge/update 判定——与其每次在同一阈值撞墙，
         # 不如把生效超时学到该提供商的真实出解延迟上；持续失败则熔断，
         # 免得坏掉的提供商把每次写入都串行卡满一个超时周期。
