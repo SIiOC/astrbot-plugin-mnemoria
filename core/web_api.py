@@ -167,7 +167,8 @@ async def _list_memories(plugin) -> dict:
 
 def _get_memory(plugin) -> dict:
     mid = _q("id")
-    row = plugin.store.get_memory(mid) if mid else None
+    scope = _q("scope", "default") or "default"
+    row = plugin.store.get_memory(mid, scope=scope) if mid else None
     return {"memory": _rows([row])[0] if row else None}
 
 
@@ -224,7 +225,10 @@ async def _update_memory(plugin) -> dict:
             # deleted_at=now（落在回收站），只清 quarantined 会得到
             # 「既不隔离也不可见」的隐身行——一并清掉 deleted_at。
             fields["deleted_at"] = None
-    plugin.store.update_memory(mid, **fields)
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.get_memory(mid, scope=scope):
+        raise ValueError("记忆不存在或不属于当前 scope")
+    plugin.store.update_memory(mid, expected_scope=scope, **fields)
     # 内容被人工修改后旧向量不再代表新语义，删掉让检索退回关键词通道；
     # 同时置脏缓存，否则去重/巩固在下次 remember() 前仍拿旧向量做判定（同 _merge_cluster 缺陷）
     if "content" in fields:
@@ -241,7 +245,9 @@ async def _delete_memory(plugin) -> dict:
     mid = str(body.get("id") or "")
     if not mid:
         raise ValueError("缺少 id")
-    plugin.store.trash(mid)
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.trash(mid, expected_scope=scope):
+        raise ValueError("记忆不存在或不属于当前 scope")
     return {"trashed": mid}
 
 
@@ -253,7 +259,10 @@ async def _restore_memory(plugin) -> dict:
     # 普通恢复保留 superseded_by，避免被新说法取代的旧事实复活到检索面；
     # clear_superseded=true 是人工明确选择的彻底恢复。
     clear_superseded = body.get("clear_superseded") in (True, "true", "1", 1)
-    plugin.store.restore(mid, clear_superseded=clear_superseded)
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.restore(mid, clear_superseded=clear_superseded,
+                                expected_scope=scope):
+        raise ValueError("记忆不存在或不属于当前 scope")
     # v0.1.4：恢复 = 该条向量重新进入活跃检索面，向量缓存必须置脏——
     # 此前漏置脏，与「编辑删除向量」同类的失效纪律缺口（编辑路径已置脏，恢复路径漏了）
     plugin.engine._vectors_dirty = True
@@ -266,7 +275,9 @@ async def _purge_memory(plugin) -> dict:
     mid = str(body.get("id") or "")
     if not mid:
         raise ValueError("缺少 id")
-    plugin.store.purge(mid)
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.purge(mid, expected_scope=scope):
+        raise ValueError("记忆不存在或不属于当前 scope")
     plugin.engine._vectors_dirty = True
     return {"purged": mid}
 
@@ -277,9 +288,11 @@ def _list_trash(plugin) -> dict:
     笔记此前只有软删没有恢复也没有清理，面板看不到、也恢复不了；
     现在与记忆一起回到同一张回收站列表，并支持 note/restore。
     """
+    scope = _q("scope", "default") or "default"
     return {
-        "items": _rows(plugin.store.list_trash()),
-        "notes": _rows(plugin.store.list_trash_notes()),
+        "items": _rows(plugin.store.list_trash(scope=scope)),
+        "notes": _rows(plugin.store.list_trash_notes(scope=scope)),
+        "scope": scope,
     }
 
 
@@ -326,20 +339,20 @@ async def _del_profile(plugin) -> dict:
 
 
 def _list_ledger(plugin) -> dict:
-    session_id = _q("session_id")
+    scope = _q("scope", "default") or "default"
+    session_id = _q("session_id") or None
     limit = _qi("limit", 50)
     if session_id:
-        rows = plugin.store.recent_ledger(session_id, limit=limit)
+        rows = plugin.store.recent_ledger(
+            session_id, limit=limit, scope=scope, role="assistant",
+        )
     else:
         rows = plugin.store.conn.execute(
             "SELECT session_id, role, substr(content,1,200) AS content, ts FROM ledger "
-            "ORDER BY ts DESC LIMIT ?",
-            (limit,),
+            "WHERE scope=? AND role='assistant' ORDER BY ts DESC LIMIT ?",
+            (scope, limit),
         ).fetchall()
-    # 面板隐私：用户自己的消息不展示（也不出网），只回放助手侧时间线。
-    # 抽取/反思走 store.recent_ledger，不受此影响。
-    rows = [r for r in rows if r["role"] == "assistant"]
-    return {"items": _rows(rows)}
+    return {"items": _rows(rows), "scope": scope}
 
 
 def _search_ledger(plugin) -> dict:
@@ -419,8 +432,12 @@ async def _update_note(plugin) -> dict:
     for k in ("title", "content", "tags"):
         if k in body:
             fields[k] = str(body[k])
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.get_note(nid, scope=scope):
+        raise ValueError("笔记不存在或不属于当前 scope")
     # v0.2.0：走引擎统一入口——内容变更时重嵌向量并重建切片派生层
-    await plugin.engine.update_note(nid, **fields)
+    if not await plugin.engine.update_note(nid, expected_scope=scope, **fields):
+        raise ValueError("笔记不存在或不属于当前 scope")
     return {"updated": nid}
 
 
@@ -429,7 +446,9 @@ async def _delete_note(plugin) -> dict:
     nid = str(body.get("id") or "")
     if not nid:
         raise ValueError("缺少 id")
-    plugin.store.trash_note(nid)
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.trash_note(nid, expected_scope=scope):
+        raise ValueError("笔记不存在或不属于当前 scope")
     return {"trashed": nid}
 
 
@@ -439,7 +458,9 @@ async def _restore_note(plugin) -> dict:
     nid = str(body.get("id") or "")
     if not nid:
         raise ValueError("缺少 id")
-    plugin.store.restore_note(nid)
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.restore_note(nid, expected_scope=scope):
+        raise ValueError("笔记不存在或不属于当前 scope")
     return {"restored": nid}
 
 
@@ -449,7 +470,9 @@ async def _purge_note(plugin) -> dict:
     nid = str(body.get("id") or "")
     if not nid:
         raise ValueError("缺少 id")
-    plugin.store.purge_note(nid)
+    scope = str(body.get("scope") or "default") or "default"
+    if not plugin.store.purge_note(nid, expected_scope=scope):
+        raise ValueError("笔记不存在或不属于当前 scope")
     return {"purged": nid}
 
 

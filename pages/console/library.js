@@ -111,7 +111,9 @@
         var tip = next ? "设为主动记忆？它将永不衰减。" : "切回被动记忆？它将重新参与衰减。";
         if (!(await MN.confirm(tip))) return;
         try {
-          await MN.api("memory/update", null, { id: m.id, is_active: next }, "POST");
+          await MN.api("memory/update", null, {
+            id: m.id, scope: MN.state.scope, is_active: next
+          }, "POST");
           m.is_active = next;
           MN.toast(next ? "已设为主动（永不衰减）" : "已设为被动");
           render();
@@ -120,7 +122,9 @@
       el.querySelector("[data-type]").addEventListener("change", async function (e) {
         var t = e.target.value;
         try {
-          await MN.api("memory/update", null, { id: m.id, memory_type: t }, "POST");
+          await MN.api("memory/update", null, {
+            id: m.id, scope: MN.state.scope, memory_type: t
+          }, "POST");
           m.memory_type = t;
           MN.toast("类型已改为「" + (TYPES[t] || { label: t }).label + "」");
           render();
@@ -130,11 +134,16 @@
         if (!(await MN.confirm("确定删除这条记忆？会先移入回收站，30 天内可恢复。"))) return;
         var idx = items.indexOf(m);
         try {
-          await MN.api("memory/delete", null, { id: m.id }, "POST");
+          await MN.api("memory/delete", null, {
+            id: m.id, scope: MN.state.scope
+          }, "POST");
           items.splice(idx, 1);
           render();
           MN.toast("已移入回收站（30 天可恢复）", function () {
-            MN.api("memory/restore", null, { id: m.id }, "POST").then(function () {
+              MN.api("memory/restore", null, {
+                id: m.id, scope: MN.state.scope
+              }, "POST").then(function () {
+
               items.splice(Math.min(idx, items.length), 0, m);
               render(); MN.toast("已撤销恢复");
             }).catch(function (e2) { MN.toast(e2.message, true); });
@@ -157,7 +166,9 @@
           var nv = c.textContent.trim();
           if (!nv || nv === org) { render(); return; }
           try {
-            await MN.api("memory/update", null, { id: m.id, content: nv }, "POST");
+            await MN.api("memory/update", null, {
+              id: m.id, scope: MN.state.scope, content: nv
+            }, "POST");
             m.content = nv;
             MN.toast("记忆内容已更新（旧向量已清，检索稍后自动补嵌）");
           } catch (e) { MN.toast(e.message, true); }

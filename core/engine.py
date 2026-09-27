@@ -1503,14 +1503,16 @@ class MemoryEngine:
         await self._sync_note_chunks(nid, text, vec=vec)
         return nid
 
-    async def update_note(self, note_id: str, **fields) -> bool:
+    async def update_note(self, note_id: str, *, expected_scope: str | None = None,
+                          **fields) -> bool:
         """更新笔记；内容变更时重嵌向量并重建切片派生层。
 
         存储层 update_note 已清掉旧向量与旧切片，这里负责重建；
         任一步失败都只降级（整篇检索），不阻断笔记更新本身。
         """
-        self.store.update_note(note_id, **fields)
-        row = self.store.get_note(note_id)
+        if not self.store.update_note(note_id, expected_scope=expected_scope, **fields):
+            return False
+        row = self.store.get_note(note_id, scope=expected_scope)
         if row is None:
             return False
         if "content" in fields:

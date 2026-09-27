@@ -360,7 +360,7 @@ class TestRound11WebReview:
 class TestMetadataValid:
     """metadata.yaml 必须通过框架校验（否则 display_name/pages 静默回退默认）。
 
-    历史缺陷：author: 13857 无引号被 YAML 解析成 int → 框架报
+    历史缺陷：author 为裸数字且无引号时被 YAML 解析成 int → 框架报
     「author 必须是非空字符串」→ 整份元数据被丢弃、控制台页面消失。
     """
 

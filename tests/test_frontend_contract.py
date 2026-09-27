@@ -66,11 +66,13 @@ class TestNoSandboxBlockedDialogs:
         assert re.search(r'\[data-del\].*addEventListener', src), "删除按钮未绑定事件"
 
     def test_create_table_has_assistant_only_ledger(self):
-        """账本接口必须过滤掉用户消息（面板隐私要求）。"""
+        """账本接口必须按 scope 过滤，且只返回助手消息（面板隐私要求）。"""
         wa = Path(__file__).resolve().parents[1] / "core" / "web_api.py"
         src = wa.read_text(encoding="utf-8")
         block = src[src.index("def _list_ledger"):src.index("async def _recall")]
-        assert '=="assistant"' in block.replace(" ", ""), "账本未过滤用户消息"
+        compact = block.replace(" ", "")
+        assert "role='assistant'" in compact, "账本列表未在 SQL 层过滤助手消息"
+        assert "scope=?" in compact, "账本列表未按 scope 过滤"
 
     def test_trash_view_shows_created_at(self):
         """回收站视图必须展示创建时间列。"""

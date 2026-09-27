@@ -326,7 +326,9 @@
       dels[i].addEventListener("click", async function () {
         if (!(await confirmBox("删除这条笔记？"))) return;
         try {
-          await api("note/delete", null, { id: this.getAttribute("data-ndel") }, "POST");
+          await api("note/delete", null, {
+            id: this.getAttribute("data-ndel"), scope: state.scope
+          }, "POST");
           toast("已删除"); loadNotes();
         } catch (e) { toast(e.message, true); }
       });
@@ -341,7 +343,7 @@
         text = text.trim();
         if (!text || text === cur.content) return;
         try {
-          await api("note/update", null, { id: id, content: text }, "POST");
+          await api("note/update", null, { id: id, content: text, scope: state.scope }, "POST");
           toast("已保存"); loadNotes();
         } catch (e) { toast(e.message, true); }
       });
@@ -404,8 +406,8 @@
     var q = $("ledSearch").value.trim();
     try {
       var d = q
-        ? await api("ledger/search", { q: q, limit: 60 })
-        : await api("ledger", { limit: 60 });
+        ? await api("ledger/search", { q: q, scope: state.scope, limit: 60 })
+        : await api("ledger", { scope: state.scope, limit: 60 });
       var items = d.items || [];
       $("ledCount").textContent = items.length + " 条";
       if (!items.length) { box.innerHTML = '<div class="empty">暂无记录</div>'; return; }
@@ -458,7 +460,7 @@
     var tbody = $("trashRows");
     tbody.innerHTML = '<tr><td colspan="6" class="empty">加载中…</td></tr>';
     try {
-      var d = await api("trash");
+      var d = await api("trash", { scope: state.scope });
       var items = d.items || [];
       /* v0.1.9：回收站同时列笔记（此前笔记软删后面板看不到也恢复不了） */
       var notes = d.notes || [];
@@ -504,7 +506,9 @@
       for (var i = 0; i < btns.length; i++) {
         btns[i].addEventListener("click", async function () {
           try {
-            await api("memory/restore", null, { id: this.getAttribute("data-restore") }, "POST");
+            await api("memory/restore", null, {
+              id: this.getAttribute("data-restore"), scope: state.scope
+            }, "POST");
             toast("已恢复");
             loadTrash();
           } catch (e) { toast(e.message, true); }
@@ -516,7 +520,8 @@
           if (!(await confirmBox("这会清除取代血缘并让旧说法重新参与检索，确定？"))) return;
           try {
             await api("memory/restore", null, {
-              id: this.getAttribute("data-restore-full"), clear_superseded: true
+              id: this.getAttribute("data-restore-full"), clear_superseded: true,
+              scope: state.scope
             }, "POST");
             toast("已彻底恢复并重新加入检索");
             loadTrash();
@@ -527,7 +532,9 @@
       for (var j = 0; j < nbtns.length; j++) {
         nbtns[j].addEventListener("click", async function () {
           try {
-            await api("note/restore", null, { id: this.getAttribute("data-restore-note") }, "POST");
+            await api("note/restore", null, {
+              id: this.getAttribute("data-restore-note"), scope: state.scope
+            }, "POST");
             toast("笔记已恢复");
             loadTrash();
           } catch (e) { toast(e.message, true); }
@@ -539,7 +546,9 @@
         pbtns[k].addEventListener("click", async function () {
           if (!(await confirmBox("彻底删除后无法恢复（连带删除向量），确定？"))) return;
           try {
-            await api("memory/purge", null, { id: this.getAttribute("data-purge") }, "POST");
+            await api("memory/purge", null, {
+              id: this.getAttribute("data-purge"), scope: state.scope
+            }, "POST");
             toast("已彻底删除");
             loadTrash();
           } catch (e) { toast(e.message, true); }
@@ -550,7 +559,9 @@
         pnbtns[m2].addEventListener("click", async function () {
           if (!(await confirmBox("彻底删除后无法恢复（连带删除切片），确定？"))) return;
           try {
-            await api("note/purge", null, { id: this.getAttribute("data-purge-note") }, "POST");
+            await api("note/purge", null, {
+              id: this.getAttribute("data-purge-note"), scope: state.scope
+            }, "POST");
             toast("笔记已彻底删除");
             loadTrash();
           } catch (e) { toast(e.message, true); }

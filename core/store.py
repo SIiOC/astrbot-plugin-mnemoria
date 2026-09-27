@@ -144,10 +144,13 @@ class MemoryStore:
         """从行对象安全解出 tags（旧库/异常值回 []）。"""
         return _tags_from_json(row["tags_json"] if "tags_json" in row.keys() else None)
 
-    def get_memory(self, mem_id: str) -> sqlite3.Row | None:
-        return self.conn.execute(
-            f"SELECT {_MEM_COLS} FROM memories WHERE id=?", (mem_id,)
-        ).fetchone()
+    def get_memory(self, mem_id: str, scope: str | None = None) -> sqlite3.Row | None:
+        sql = f"SELECT {_MEM_COLS} FROM memories WHERE id=?"
+        params: tuple = (mem_id,)
+        if scope is not None:
+            sql += " AND scope=?"
+            params += (scope,)
+        return self.conn.execute(sql, params).fetchone()
 
     def get_by_hash(self, chash: str, scope: str) -> sqlite3.Row | None:
         return self.conn.execute(
@@ -155,9 +158,10 @@ class MemoryStore:
             (chash, scope),
         ).fetchone()
 
-    def update_memory(self, mem_id: str, **fields: Any) -> None:
+    def update_memory(self, mem_id: str, *, expected_scope: str | None = None,
+                      **fields: Any) -> bool:
         if not fields:
-            return
+            return self.get_memory(mem_id, expected_scope) is not None
         allowed = {
             "content", "reasoning", "memory_type", "strength", "useful_score",
             "useful_count", "hit_count", "last_recalled_at", "last_decay_at",
@@ -167,16 +171,22 @@ class MemoryStore:
         sets = [f"{k}=?" for k in fields if k in allowed]
         vals = [fields[k] for k in fields if k in allowed]
         if not sets:
-            return
+            return self.get_memory(mem_id, expected_scope) is not None
         if "content" in fields:
             sets.append("content_hash=?")
             vals.append(content_hash(str(fields["content"])))
-            self.conn.execute("DELETE FROM vectors WHERE memory_id=?", (mem_id,))
         sets.append("updated_at=?")
         vals.append(utc_now_ts())
         vals.append(mem_id)
-        self.conn.execute(f"UPDATE memories SET {', '.join(sets)} WHERE id=?", vals)
+        where = "id=?"
+        if expected_scope is not None:
+            where += " AND scope=?"
+            vals.append(expected_scope)
+        cur = self.conn.execute(f"UPDATE memories SET {', '.join(sets)} WHERE {where}", vals)
+        if cur.rowcount and "content" in fields:
+            self.conn.execute("DELETE FROM vectors WHERE memory_id=?", (mem_id,))
         self.conn.commit()
+        return bool(cur.rowcount)
 
     def reinforce(self, mem_id: str, useful_delta: float, strength_delta: float = 1.0) -> None:
         """被判定有用：useful_score/strength 增量、proof_count+1（增量信念）。"""
@@ -422,60 +432,78 @@ class MemoryStore:
         )
         self.conn.commit()
 
-    def trash(self, mem_id: str) -> None:
+    def trash(self, mem_id: str, *, expected_scope: str | None = None) -> bool:
         """放入回收站（软删）。"""
-        self.conn.execute(
-            "UPDATE memories SET deleted_at=?, updated_at=? WHERE id=?",
-            (utc_now_ts(), utc_now_ts(), mem_id),
-        )
+        sql = "UPDATE memories SET deleted_at=?, updated_at=? WHERE id=?"
+        params: tuple = (utc_now_ts(), utc_now_ts(), mem_id)
+        if expected_scope is not None:
+            sql += " AND scope=?"
+            params += (expected_scope,)
+        cur = self.conn.execute(sql, params)
         self.conn.commit()
+        return bool(cur.rowcount)
 
-    def restore(self, mem_id: str, *, clear_superseded: bool = False) -> None:
+    def restore(self, mem_id: str, *, clear_superseded: bool = False,
+                expected_scope: str | None = None) -> bool:
         """从回收站恢复。
 
         默认恢复普通软删/隔离条；若条目已被新说法取代，则保留 deleted_at、
         superseded_by 与 valid_to，继续留在回收站供复核且不进入检索面。面板的
         「彻底恢复」或人工明确指定 clear_superseded=True，才清除血缘并重新可检索。
         """
+        scope_clause = " AND scope=?" if expected_scope is not None else ""
+        scope_params = (expected_scope,) if expected_scope is not None else ()
         if clear_superseded:
-            self.conn.execute(
+            cur = self.conn.execute(
                 "UPDATE memories SET deleted_at=NULL, quarantined=0, "
-                "superseded_by=NULL, valid_to=NULL, updated_at=? WHERE id=?",
-                (utc_now_ts(), mem_id),
+                "superseded_by=NULL, valid_to=NULL, updated_at=? WHERE id=?" + scope_clause,
+                (utc_now_ts(), mem_id) + scope_params,
             )
         else:
             # 已被取代的旧说法继续保留 deleted_at，因而留在回收站可见层，
             # 也继续受 trash_retention_days 清理；普通软删/隔离条目则恢复到活跃面。
-            self.conn.execute(
+            cur = self.conn.execute(
                 "UPDATE memories SET deleted_at=CASE WHEN superseded_by IS NULL "
-                "THEN NULL ELSE deleted_at END, quarantined=0, updated_at=? WHERE id=?",
-                (utc_now_ts(), mem_id),
+                "THEN NULL ELSE deleted_at END, quarantined=0, updated_at=? WHERE id=?" + scope_clause,
+                (utc_now_ts(), mem_id) + scope_params,
             )
         self.conn.commit()
+        return bool(cur.rowcount)
 
-    def purge(self, mem_id: str) -> None:
+    def purge(self, mem_id: str, *, expected_scope: str | None = None) -> bool:
         """物理删除（回收站逾期清理时用）。"""
-        self.conn.execute("DELETE FROM memories WHERE id=?", (mem_id,))
-        self.conn.execute("DELETE FROM vectors WHERE memory_id=?", (mem_id,))
+        sql = "DELETE FROM memories WHERE id=?"
+        params: tuple = (mem_id,)
+        if expected_scope is not None:
+            sql += " AND scope=?"
+            params += (expected_scope,)
+        cur = self.conn.execute(sql, params)
+        if cur.rowcount:
+            self.conn.execute("DELETE FROM vectors WHERE memory_id=?", (mem_id,))
         self.conn.commit()
+        return bool(cur.rowcount)
 
-    def list_trash(self, older_than_ts: float | None = None) -> list[sqlite3.Row]:
+    def list_trash(self, older_than_ts: float | None = None,
+                   scope: str | None = None) -> list[sqlite3.Row]:
         # superseded 旧说法即使已点过「恢复」也留在回收站可见层，
         # 直到 clear_superseded=True 或 purge；检索仍由 superseded_by 条件排除。
         where = "(deleted_at IS NOT NULL OR superseded_by IS NOT NULL)"
-        params: tuple = ()
+        params: list = []
+        if scope is not None:
+            where += " AND scope=?"
+            params.append(scope)
         if older_than_ts is not None:
             # 没有 deleted_at 的历史异常行只能人工彻底恢复，不能因夜间清理
             # 的时间条件被误删；正常演进旧条始终带 deleted_at。
             where += " AND deleted_at IS NOT NULL AND deleted_at < ?"
-            params = (older_than_ts,)
+            params.append(older_than_ts)
         return self.conn.execute(
             f"SELECT {_MEM_COLS} FROM memories WHERE {where}", params
         ).fetchall()
 
     # ------------------------------------------------------------------ 笔记回收站
     def list_trash_notes(self, older_than_ts: float | None = None,
-                         limit: int = 500) -> list[sqlite3.Row]:
+                         limit: int = 500, scope: str | None = None) -> list[sqlite3.Row]:
         """回收站里的笔记（v0.1.9）。
 
         此前笔记只有软删没有恢复也没有清理：purge_trash 只扫 memories，
@@ -488,6 +516,9 @@ class MemoryStore:
             f"SELECT {_NOTE_PUBLIC_COLS} FROM notes WHERE deleted_at IS NOT NULL"
         )
         params: list = []
+        if scope is not None:
+            sql += " AND scope=?"
+            params.append(scope)
         if older_than_ts is not None:
             sql += " AND deleted_at < ?"
             params.append(float(older_than_ts))
@@ -620,7 +651,8 @@ class MemoryStore:
             return False
 
     def recent_ledger(self, session_id: str, limit: int = 40,
-                      after_id: int = 0, oldest_first: bool = False) -> list[sqlite3.Row]:
+                      after_id: int = 0, oldest_first: bool = False, *,
+                      scope: str | None = None, role: str | None = None) -> list[sqlite3.Row]:
         """取某会话流水（按时间正序返回）。
 
         after_id: 只取 rowid 大于该值的行——抽取游标，防止同一段对话被
@@ -631,10 +663,20 @@ class MemoryStore:
         逐窗口推进，被截断的剩余消息留给下一轮）；默认取最新的 N 条
         （近因查询用）。两种模式都返回时间正序。
         """
+        where = ["session_id=?", "id>?"]
+        params: list = [session_id, int(after_id)]
+        if scope is not None:
+            where.append("scope=?")
+            params.append(scope)
+        if role is not None:
+            where.append("role=?")
+            params.append(role)
+        params.append(int(limit))
         rows = self.conn.execute(
-            "SELECT id, role, content, ts, message_id FROM ledger "
-            f"WHERE session_id=? AND id>? ORDER BY id {'ASC' if oldest_first else 'DESC'} LIMIT ?",
-            (session_id, int(after_id), int(limit)),
+            "SELECT id, role, content, ts, message_id FROM ledger WHERE "
+            + " AND ".join(where)
+            + f" ORDER BY id {'ASC' if oldest_first else 'DESC'} LIMIT ?",
+            params,
         ).fetchall()
         return rows if oldest_first else rows[::-1]
 
@@ -826,17 +868,21 @@ class MemoryStore:
         self.conn.commit()
         return nid
 
-    def get_note(self, note_id: str) -> sqlite3.Row | None:
-        return self.conn.execute(
-            "SELECT * FROM notes WHERE id=?", (note_id,)
-        ).fetchone()
+    def get_note(self, note_id: str, scope: str | None = None) -> sqlite3.Row | None:
+        sql = "SELECT * FROM notes WHERE id=?"
+        params: tuple = (note_id,)
+        if scope is not None:
+            sql += " AND scope=?"
+            params += (scope,)
+        return self.conn.execute(sql, params).fetchone()
 
-    def update_note(self, note_id: str, **fields: Any) -> None:
+    def update_note(self, note_id: str, *, expected_scope: str | None = None,
+                    **fields: Any) -> bool:
         allowed = {"title", "content", "tags", "scope"}
         sets = [f"{k}=?" for k in fields if k in allowed]
         vals = [fields[k] for k in fields if k in allowed]
         if not sets:
-            return
+            return self.get_note(note_id, expected_scope) is not None
         if "content" in fields:
             sets.append("content_hash=?")
             vals.append(content_hash(str(fields["content"])))
@@ -846,29 +892,54 @@ class MemoryStore:
         sets.append("updated_at=?")
         vals.append(utc_now_ts())
         vals.append(note_id)
-        self.conn.execute(f"UPDATE notes SET {', '.join(sets)} WHERE id=?", vals)
+        where = "id=?"
+        if expected_scope is not None:
+            where += " AND scope=?"
+            vals.append(expected_scope)
+        cur = self.conn.execute(f"UPDATE notes SET {', '.join(sets)} WHERE {where}", vals)
+        if not cur.rowcount:
+            self.conn.commit()
+            return False
         # v0.2.0：内容变更后旧切片派生层立即失效，避免检索到旧正文；
         # 重建由 engine.update_note / _sync_note_chunks 负责，失败自然回退整篇检索
         if "content" in fields:
             self.conn.execute("DELETE FROM note_chunks WHERE note_id=?", (note_id,))
         self.conn.commit()
+        return True
 
-    def trash_note(self, note_id: str) -> None:
-        self.conn.execute("UPDATE notes SET deleted_at=?, updated_at=? WHERE id=?",
-                          (utc_now_ts(), utc_now_ts(), note_id))
+    def trash_note(self, note_id: str, *, expected_scope: str | None = None) -> bool:
+        sql = "UPDATE notes SET deleted_at=?, updated_at=? WHERE id=?"
+        params: tuple = (utc_now_ts(), utc_now_ts(), note_id)
+        if expected_scope is not None:
+            sql += " AND scope=?"
+            params += (expected_scope,)
+        cur = self.conn.execute(sql, params)
         self.conn.commit()
+        return bool(cur.rowcount)
 
-    def restore_note(self, note_id: str) -> None:
-        self.conn.execute("UPDATE notes SET deleted_at=NULL, updated_at=? WHERE id=?",
-                          (utc_now_ts(), note_id))
+    def restore_note(self, note_id: str, *, expected_scope: str | None = None) -> bool:
+        sql = "UPDATE notes SET deleted_at=NULL, updated_at=? WHERE id=?"
+        params: tuple = (utc_now_ts(), note_id)
+        if expected_scope is not None:
+            sql += " AND scope=?"
+            params += (expected_scope,)
+        cur = self.conn.execute(sql, params)
         self.conn.commit()
+        return bool(cur.rowcount)
 
-    def purge_note(self, note_id: str) -> None:
+    def purge_note(self, note_id: str, *, expected_scope: str | None = None) -> bool:
         # 先删切片（显式 DELETE 会驱动 chunk_fts 清理触发器；不能只靠
         # 外键级联——级联不保证触发触发器，FTS 会残留脏行）
-        self.conn.execute("DELETE FROM note_chunks WHERE note_id=?", (note_id,))
-        self.conn.execute("DELETE FROM notes WHERE id=?", (note_id,))
+        sql = "DELETE FROM notes WHERE id=?"
+        params: tuple = (note_id,)
+        if expected_scope is not None:
+            sql += " AND scope=?"
+            params += (expected_scope,)
+        cur = self.conn.execute(sql, params)
+        if cur.rowcount:
+            self.conn.execute("DELETE FROM note_chunks WHERE note_id=?", (note_id,))
         self.conn.commit()
+        return bool(cur.rowcount)
 
     def list_notes(self, scope: str | None = None, include_deleted: bool = False,
                    limit: int = 200) -> list[sqlite3.Row]:
