@@ -58,6 +58,23 @@ def estimate_tokens(text: str) -> int:
 
 
 _TAG = re.compile(r"<[^>]{1,80}>")
+_UNTRUSTED_MARKER = re.compile(
+    r"\[/?\s*UNTRUSTED\s+DATA\s*\]|</?relevant_memories>|"
+    r"\[/?\s*relevant_memories\s*\]",
+    re.IGNORECASE,
+)
+_ID_TOKEN = re.compile(
+    r"(?:openid|open_id|user[_ -]?id|用户(?:编号|ID)|账号|账户|qq|微信|wx)"
+    r"\s*(?:为|是|:|：|=)\s*[A-Za-z0-9_+\-:.@]{2,64}",
+    re.IGNORECASE,
+)
+
+
+def strip_identity(text: str) -> str:
+    """剥离常见身份前缀，供文本相似度使用；无法识别时保持原文。"""
+    if not text:
+        return ""
+    return normalize(_ID_TOKEN.sub(" ", str(text)))
 
 
 def sanitize_for_context(text: str, max_chars: int = 200) -> str:
@@ -68,7 +85,8 @@ def sanitize_for_context(text: str, max_chars: int = 200) -> str:
     """
     if not text:
         return ""
-    t = _TAG.sub("", str(text))
+    t = _UNTRUSTED_MARKER.sub(" ", str(text))
+    t = _TAG.sub("", t)
     t = t.replace("\r", " ").replace("\n", "；")
     t = _WS.sub(" ", t).strip()
     return truncate(t, max_chars)

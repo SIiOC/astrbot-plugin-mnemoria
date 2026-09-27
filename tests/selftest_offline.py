@@ -149,7 +149,7 @@ def test_store_and_engine():
             # 账本
             eng.record_turn("s1", "user", "我最近在准备高考", scope="default")
             eng.record_turn("s1", "assistant", "加油", scope="default")
-            led = store.search_ledger("高考", session_id="s1")
+            led = store.search_ledger("高考", session_id="s1", scope="default", role="all")
             check("账本检索命中", len(led) >= 1)
 
             # 画像

@@ -61,7 +61,7 @@ class TestScale:
                 eng.record_turn("s", "user", f"第{i}条历史消息内容", scope="default")
             rows = store.recent_ledger("s", limit=50)
             assert len(rows) == 50
-            hit = store.search_ledger("第1999条", session_id="s")
+            hit = store.search_ledger("第1999条", session_id="s", scope="default")
             assert len(hit) >= 1
         finally:
             conn.close()

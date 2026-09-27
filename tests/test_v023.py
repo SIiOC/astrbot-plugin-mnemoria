@@ -145,10 +145,10 @@ class TestConservativeFallback:
             first = store.active_memories("default")[0]
             assert await eng.remember("小明热衷运动艺术创作", alpha=0.9) is True
             active = store.active_memories("default")
-            assert len(active) == 1, "高相似下超时也必须收敛为一条"
-            assert active[0]["id"] == first["id"]
+            assert len(active) == 2, "高向量但文本差异大时不得误合并"
+            assert any(r["id"] == first["id"] for r in active)
             evs = store.list_memory_events(target_id=first["id"])
-            assert any(e["action"] == "reinforce" for e in evs), "回退强化也要留审计"
+            assert not any(e["action"] == "reinforce" for e in evs), "文本确认失败不得伪造强化审计"
         finally:
             conn.close()
 
@@ -171,7 +171,7 @@ class TestConservativeFallback:
         try:
             assert await eng.remember("小明喜欢跑步", alpha=0.9) is True
             assert await eng.remember("小明热衷运动艺术创作", alpha=0.9) is True
-            assert len(store.active_memories("default")) == 1
+            assert len(store.active_memories("default")) == 2
         finally:
             conn.close()
 

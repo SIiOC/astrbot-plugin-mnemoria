@@ -344,9 +344,12 @@ def _list_ledger(plugin) -> dict:
 
 def _search_ledger(plugin) -> dict:
     q = _q("q")
+    scope = _q("scope", "default") or "default"
     session_id = _q("session_id") or None
-    rows = plugin.store.search_ledger(q, session_id=session_id, limit=_qi("limit", 30))
-    rows = [r for r in rows if r["role"] == "assistant"]
+    rows = plugin.store.search_ledger(
+        q, session_id=session_id, limit=_qi("limit", 30),
+        scope=scope, role="assistant",
+    )
     return {"items": _rows(rows)}
 
 

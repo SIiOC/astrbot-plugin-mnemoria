@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-from .text import content_hash, fold, is_mostly_emoji_or_punct, normalize
+from .text import content_hash, fold, is_mostly_emoji_or_punct, normalize, strip_identity
 from .vector import cosine
 
 
@@ -91,13 +91,12 @@ def looks_like_secret(text: str) -> bool:
 
 
 def is_meta_instruction(text: str) -> bool:
-    """是否含提示注入型元指令（"你是…""忽略以上…"等）。
-
-    v0.1.9：本函数不再判定"记住/提醒我"这类祈使句式——那类文本由
-    :func:`strip_meta_prefix` 剥离前缀后照常入库（见模块头与 _LEADING_META_RE）。
-    """
-    t = normalize(text)
-    return any(p.search(t) for p in _INJECTION_PATTERNS)
+    """是否含提示注入型元指令，先折叠空白再匹配。"""
+    normalized = normalize(text)
+    compact = re.sub(r"\s+", "", normalized).lower()
+    if "ignore" in compact and "previous" in compact:
+        return True
+    return any(p.search(normalized) or p.search(compact) for p in _INJECTION_PATTERNS)
 
 
 def strip_meta_prefix(text: str, max_rounds: int = 3) -> tuple[str, bool]:
@@ -216,8 +215,10 @@ def char_ngrams(text: str, n: int = 2) -> set[str]:
     return grams
 
 
-def text_similarity(a: str, b: str) -> float:
-    """字符级 Jaccard 相似度，0~1。"""
+def text_similarity(a: str, b: str, *, strip_ids: bool = True) -> float:
+    """字符级 Jaccard 相似度，默认先剥离身份前缀。"""
+    if strip_ids:
+        a, b = strip_identity(a), strip_identity(b)
     ga, gb = char_ngrams(a), char_ngrams(b)
     if not ga or not gb:
         return 0.0

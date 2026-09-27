@@ -80,6 +80,9 @@ class MemoryStore:
         valid_from: float | None = None,
         mem_id: str | None = None,
         quarantined: bool = False,
+        deleted_at: float | None = None,
+        superseded_by: str | None = None,
+        valid_to: float | None = None,
         tags: list[str] | None = None,
     ) -> str:
         mid = self._insert_memory(
@@ -88,7 +91,8 @@ class MemoryStore:
             speaker=speaker, speaker_key=speaker_key, scope=scope,
             session_id=session_id, is_active=is_active, strength=strength,
             proof_count=proof_count, valid_from=valid_from, mem_id=mem_id,
-            quarantined=quarantined, tags=tags,
+            quarantined=quarantined, deleted_at=deleted_at,
+            superseded_by=superseded_by, valid_to=valid_to, tags=tags,
         )
         self.conn.commit()
         return mid
@@ -110,6 +114,9 @@ class MemoryStore:
         valid_from: float | None = None,
         mem_id: str | None = None,
         quarantined: bool = False,
+        deleted_at: float | None = None,
+        superseded_by: str | None = None,
+        valid_to: float | None = None,
         tags: list[str] | None = None,
     ) -> str:
         """执行插入但不提交（供单事务裁决使用）。"""
@@ -120,13 +127,13 @@ class MemoryStore:
             "is_active, strength, useful_score, useful_count, hit_count, last_recalled_at, "
             "last_decay_at, proof_count, observed_at, valid_from, valid_to, superseded_by, "
             "deleted_at, quarantined, scope, session_id, content_hash, tags_json, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,0,0,0,0,0,?,?,?,NULL,NULL,?,?,?,?,?,?,?,?)",
+            "VALUES (?,?,?,?,?,?,?,?,?,0,0,0,0,0,?,?,?, ?,?,?,?, ?,?,?,?,?,?)",
             (
                 mid, content, reasoning, memory_type, source, speaker, speaker_key,
                 1 if is_active else 0, float(strength), int(proof_count),
-                now, (valid_from if valid_from is not None else now),
-                (now if quarantined else None), 1 if quarantined else 0,
-                scope, session_id, content_hash(content),
+                now, (valid_from if valid_from is not None else now), valid_to,
+                superseded_by, deleted_at if deleted_at is not None else (now if quarantined else None),
+                1 if quarantined else 0, scope, session_id, content_hash(content),
                 _tags_to_json(tags), now, now,
             ),
         )
@@ -161,6 +168,10 @@ class MemoryStore:
         vals = [fields[k] for k in fields if k in allowed]
         if not sets:
             return
+        if "content" in fields:
+            sets.append("content_hash=?")
+            vals.append(content_hash(str(fields["content"])))
+            self.conn.execute("DELETE FROM vectors WHERE memory_id=?", (mem_id,))
         sets.append("updated_at=?")
         vals.append(utc_now_ts())
         vals.append(mem_id)
@@ -232,6 +243,7 @@ class MemoryStore:
         reason: str = "",
         confidence: float = 0.0,
         provider: str = "",
+        event_action: str = "",
     ) -> dict | None:
         """单事务执行一次写入裁决，失败整组回滚并返回 None。
 
@@ -322,8 +334,9 @@ class MemoryStore:
                     (useful, proof, now, mid),
                 )
             self._event_conn(
-                action, scope=scope, source_ids=[r["id"] for r in valid],
-                target_id=mid, reason=reason, confidence=confidence, provider=provider,
+                str(event_action or action), scope=scope,
+                source_ids=[r["id"] for r in valid], target_id=mid,
+                reason=reason, confidence=confidence, provider=provider,
             )
             self.conn.commit()
             return {"ok": True, "action": action, "target_id": mid}
@@ -634,7 +647,10 @@ class MemoryStore:
             row = self.conn.execute("SELECT MAX(id) AS m FROM ledger").fetchone()
         return int(row["m"] or 0)
 
-    def search_ledger(self, query: str, session_id: str | None = None, limit: int = 20) -> list[sqlite3.Row]:
+    def search_ledger(
+        self, query: str, session_id: str | None = None, limit: int = 20,
+        *, scope: str = "public", role: str = "all",
+    ) -> list[sqlite3.Row]:
         if not query.strip():
             return []
         rows: list[sqlite3.Row] = []
@@ -642,9 +658,12 @@ class MemoryStore:
             try:
                 sql = (
                     "SELECT l.role, l.content, l.ts, l.session_id FROM ledger_fts f "
-                    "JOIN ledger l ON l.id=f.row_id WHERE ledger_fts MATCH ?"
+                    "JOIN ledger l ON l.id=f.row_id WHERE ledger_fts MATCH ? AND l.scope=?"
                 )
-                params: list = [_fts_query(query)]
+                params: list = [_fts_query(query), scope]
+                if role != "all":
+                    sql += " AND l.role=?"
+                    params.append(role)
                 if session_id:
                     sql += " AND l.session_id=?"
                     params.append(session_id)
@@ -657,8 +676,11 @@ class MemoryStore:
         if rows:
             return rows
         # 降级/兜底：LIKE（覆盖 trigram 对 <3 字符查询的局限）
-        sql = "SELECT role, content, ts, session_id FROM ledger WHERE content LIKE ?"
-        params = [f"%{query}%"]
+        sql = "SELECT role, content, ts, session_id FROM ledger WHERE content LIKE ? AND scope=?"
+        params = [f"%{query}%", scope]
+        if role != "all":
+            sql += " AND role=?"
+            params.append(role)
         if session_id:
             sql += " AND session_id=?"
             params.append(session_id)

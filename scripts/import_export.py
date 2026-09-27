@@ -121,7 +121,7 @@ def do_import(db_path: Path, in_path: Path, vectorize: bool = False,
                 store.update_memory(existing["id"], is_active=1)
             reinforced += 1
             continue
-        store.add_memory(
+        imported_id = store.add_memory(
             content,
             reasoning=str(m.get("reasoning") or ""),
             memory_type=str(m.get("memory_type") or "fact"),
@@ -132,14 +132,18 @@ def do_import(db_path: Path, in_path: Path, vectorize: bool = False,
             scope=scope,
             session_id=str(m.get("session_id") or ""),
             is_active=bool(m.get("is_active")),
-            strength=float(m.get("strength") or 10.0),
-            proof_count=int(m.get("proof_count") or 1),
+            strength=float(m.get("strength") if m.get("strength") is not None else 10.0),
+            proof_count=int(m.get("proof_count") if m.get("proof_count") is not None else 1),
             valid_from=_ts_or_none(m.get("observed_at")) if preserve_ts else None,
+            valid_to=_ts_or_none(m.get("valid_to")) if preserve_ts else None,
+            deleted_at=_ts_or_none(m.get("deleted_at")) if preserve_ts else None,
+            superseded_by=str(m.get("superseded_by") or "") or None,
+            quarantined=bool(m.get("quarantined")), 
             # v0.1.8：备份往返保留 tags（导出 JSON 里是 tags_json 列名）
             tags=store.parse_tags({"tags_json": m.get("tags_json")}) or None,
         )
         # 回填 useful_score 等分数（add_memory 默认 0）
-        row = store.get_by_hash(content_hash(content), scope)
+        row = store.get_memory(imported_id)
         if row:
             store.update_memory(
                 row["id"],
@@ -152,7 +156,7 @@ def do_import(db_path: Path, in_path: Path, vectorize: bool = False,
             if ts:
                 conn.execute(
                     "UPDATE memories SET created_at=?, observed_at=? WHERE id=?",
-                    (ts, ts, row["id"]),
+                    (ts, ts, imported_id),
                 )
                 conn.commit()
         added += 1

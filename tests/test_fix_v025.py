@@ -36,7 +36,7 @@ _CONF = {"admission": {
 }}
 
 _NEW_CONTENT = "用户最近迷上了羊毛毡"
-_CAND = ("cand0001id", "用户的旧兴趣是跑步")
+_CAND = ("cand0001id", "用户最近迷上了羊毛毡")
 
 
 class SlowLLM:

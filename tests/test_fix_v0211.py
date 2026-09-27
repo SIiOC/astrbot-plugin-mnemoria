@@ -175,8 +175,29 @@ class TestConservativeFallbackThreshold:
         eng, store, conn = make_engine(payload={})
         try:
             decision = eng._fallback_reinforce(
-                "用户喜欢跑步运动", [(0.93, "cafebab0", "用户爱好是跑步运动")])
+                "用户喜欢跑步运动", [(0.93, "cafebab0", "用户喜欢跑步运动制作")])
             assert decision and decision["action"] == "reinforce"
+        finally:
+            conn.close()
+
+    async def test_high_vector_low_text_not_reinforced(self, make_engine):
+        eng, store, conn = make_engine(payload={})
+        try:
+            decision = eng._fallback_reinforce(
+                "用户住在上海", [(0.95, "cafebabe", "用户职业是教师")])
+            assert decision is None
+        finally:
+            conn.close()
+
+    async def test_zero_text_threshold_disables_text_branch(self, make_engine):
+        eng, store, conn = make_engine(payload={
+            "admission": {"text_dedup_similarity": 0.0,
+                          "conservative_fallback_similarity": 0.99}
+        })
+        try:
+            decision = eng._fallback_reinforce(
+                "用户住在上海", [(0.10, "cafebabe", "用户职业是教师")])
+            assert decision is None
         finally:
             conn.close()
 

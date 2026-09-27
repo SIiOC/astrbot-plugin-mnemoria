@@ -69,9 +69,15 @@ class MemoryRecallTool(FunctionTool):
                 f"{rel_time_label(getattr(c, 'created_at', 0.0))}"
                 for c in cands
             )
-        ledger = engine.store.search_ledger(q, session_id=event.get_session_id(), limit=n)
+        session_id = event.get_session_id()
+        ledger = engine.store.search_ledger(
+            q, session_id=session_id, limit=n, scope=scope, role="assistant"
+        )
         if not ledger:
-            ledger = engine.store.search_ledger(q, limit=n)
+            # 允许同一隔离域跨会话回退，但不得省略 scope，避免账本跨域泄漏。
+            ledger = engine.store.search_ledger(
+                q, limit=n, scope=scope, role="assistant"
+            )
         if ledger:
             lines.append("【历史对话片段】")
             for r in ledger:

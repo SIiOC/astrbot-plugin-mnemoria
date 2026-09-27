@@ -1,10 +1,28 @@
 # Changelog
 
-> 完整迭代记录。其中 0.1.0 → 0.2.16 为作者个人环境的孵化期
-> （18 轮审查迭代），文中「线上实测」等字样均指作者本人的部署环境。
+> 完整迭代记录。其中 0.1.0 → 0.2.17 为作者个人环境的孵化期
+> （19 轮审查迭代），文中「线上实测」等字样均指作者本人的部署环境。
 >
-> 版本对应关系：公开发布的 **1.0.1** = 内部 0.2.16、**1.0.0** = 内部 0.2.15
-> （发布树经确定性流水线生成，零预设内容；此后发布树与内部版本各自演进）。
+> 版本对应关系：公开发布的 **1.0.2** = 内部 0.2.17、**1.0.1** = 内部 0.2.16、
+> **1.0.0** = 内部 0.2.15（发布树经确定性流水线生成，零预设内容；此后发布树
+> 与内部版本各自演进）。
+
+## 1.0.2 (2026-09-27)
+
+数据边界与完整性加固版：
+- **账本检索 scope/role 隔离**：`memory_recall` 与面板账本搜索不再无 scope 全库
+  回退（同隔离域内可跨会话，跨域绝不泄漏；且只回放助手侧）；
+- **注入条目消毒补全**：`sanitize_for_context` 先剥残留的 UNTRUSTED/
+  relevant_memories 标记，防历史数据把包裹标签注入新上下文；
+- **巩固事务化**：夜间巩固合并改走单事务（`adjudicated_write`，事件 action=
+  consolidate），失败整组回滚不留幽灵状态，成功后才刷新向量缓存；
+- **裁决回退文本确认**：高向量候选必须同时通过文本确认（≥0.70）才保守强化，
+  「高向量低文本」的不同事实不再被误合并；文本近重复仍可独立兜底；
+- **备份状态往返**：导入/恢复保留 deleted_at/superseded_by/valid_to/quarantined
+  （备份往返后回收站与血缘状态不再丢失）；裁决合并的向量随内容同步失效；
+- **相似度剥离身份前缀**：文本 Jaccard 前先剥 openid/用户ID/QQ/微信 等身份
+  前缀（`strip_identity`），长身份串不再抬高不同事实的相似度；
+- 元指令检测增强：折叠空白后匹配 + 英文 "ignore previous" 形态。
 
 ## 1.0.1 (2026-09-26)
 
@@ -29,8 +47,33 @@
 
 ---
 
-## 内部孵化期（0.1.0 → 0.2.16）
+## 内部孵化期（0.1.0 → 0.2.17）
 
+
+0.2.17 — 数据边界与完整性加固批（2026-09-27，发布审查延续）：
+- **scope/role 账本隔离**：`store.search_ledger` 增加 scope/role 过滤（FTS 与
+  LIKE 双路径），`memory_recall` 工具与面板账本搜索均按当前隔离域过滤、只回放
+  助手侧——此前本会话未命中时无 scope 全库回退，其它会话的用户原话可能被带进
+  当前上下文；
+- **UNTRUSTED 标记消毒**：`sanitize_for_context` 新增 `_UNTRUSTED_MARKER`
+  （`[UNTRUSTED DATA]`/`<relevant_memories>` 等残留标记），先剥后消毒——历史
+  数据里已带包裹标签的条目不再把标签注入新上下文；
+- **content_hash 与向量同步失效**：裁决合并落库时 `DELETE FROM vectors` 清除
+  目标旧向量（防新内容配旧向量参与后续去重/聚类）；
+- **备份状态恢复**：`store.add_memory` 支持 deleted_at/superseded_by/valid_to/
+  quarantined 直写，导入/恢复路径完整保留软删与血缘状态（备份往返不丢回收站）；
+- **文本确认后的保守回退**：`_fallback_reinforce` 中 vector_ok 需 `top_sim≥
+  conservative_fallback_similarity` **且** 文本相似度≥0.70——高向量低文本的
+  不同事实不再被误强化（文本近重复 ≥text_dedup_similarity 仍可独立触发）；
+- **巩固事务化**：`_merge_cluster` 改走 `store.adjudicated_write` 单事务
+  （event_action="consolidate"，审计事件与数据同事务），失败整组回滚返回
+  False，向量缓存仅在事务成功后刷新；
+- **身份前缀剥离**：`core/text.strip_identity`（openid/open_id/user_id/用户ID/
+  账号/qq/微信/wx + 值的形态正则），`admission.text_similarity` 默认
+  `strip_ids=True` 先剥再算 Jaccard；
+- 元指令检测：`is_meta_instruction` 折叠空白后匹配 + `ignore…previous` 英文
+  形态；
+- 回归：新增 4 钉（账本隔离/消毒/状态往返/回退文本确认），总计 612 绿。
 
 0.2.16 — 发布审查修复批（2026-09-26，三源审查定锤）：
 - **群聊注入门控（P1）**：`inject_memories` 对群聊事件默认不再注入画像/

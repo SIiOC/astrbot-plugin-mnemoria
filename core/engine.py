@@ -946,15 +946,19 @@ class MemoryEngine:
         if not cands:
             return None
         cfg = self.config
-        sim_floor = float(cfg.get("admission.conservative_fallback_similarity", 0.90) or 0.90)
-        text_floor = float(cfg.get("admission.text_dedup_similarity", 0.80) or 0.80)
+        sim_floor = float(cfg.get("admission.conservative_fallback_similarity", 0.90))
+        text_floor = float(cfg.get("admission.text_dedup_similarity", 0.80))
         best = None
         for top_sim, top_id, top_content in cands:
             ts = admission.text_similarity(content, top_content)
             if admission.differs_only_by_numbers(content, top_content):
                 continue
-            if top_sim >= sim_floor or ts >= text_floor:
-                score = (1 if top_sim >= sim_floor else 0, max(float(top_sim), float(ts)))
+            # 高向量候选必须同时通过文本确认；文本近重复仍可独立作为
+            # 无向量/弱向量回退，避免把两个不同事实仅凭嵌入误合并。
+            vector_ok = top_sim >= sim_floor and ts >= 0.70
+            text_ok = text_floor > 0.0 and ts >= text_floor
+            if vector_ok or text_ok:
+                score = (1 if vector_ok else 0, max(float(top_sim), float(ts)))
                 if best is None or score > best[0]:
                     best = (score, top_sim, top_id, ts)
         if best is None:
@@ -1785,39 +1789,25 @@ class MemoryEngine:
             return False
         # 新条目继承最高 useful_score，其余条目 supersede 指向它（保留血缘，可复活）
         best = max(cluster, key=lambda r: (r["useful_score"] or 0.0))
-        new_id = self.store.add_memory(
-            new_content,
-            memory_type=best["memory_type"],
-            source=best["source"],
-            scope=scope,
-            strength=float(best["strength"] or 10.0),
-            proof_count=sum(int(r["proof_count"] or 1) for r in cluster),
-        )
-        self.store.update_memory(new_id, useful_score=float(best["useful_score"] or 0.0))
         vec = None
         if self.embedder is not None and getattr(self.embedder, "enabled", False):
             vec = await self.embedder.embed_one(new_content)
-        if vec:
-            self.store.set_vector(new_id, vec)
-            # 缓存必须失效：合并产物是活跃记忆，若不置脏，后续去重/聚类
-            # 在下次 remember() 之前都看不到它的向量（第十一轮审查缺陷）
-            self._vectors_dirty = True
-        for r in cluster:
-            self.store.supersede(r["id"], new_id)
-            # v0.2.7 再审修复：supersede 只把旧条挤出活性视图与检索面，
-            # 但**不进回收站**——面板三不见（活性/回收站/检索都看不到），
-            # 既不生效也不可恢复，腐成死数据（线上曾积 489 条）。与
-            # _apply_evolution 的演进取代保持同一语义：血缘 + 入回收站
-            # （trash_retention_days 内可复活，逾期由回收站清理物理删除）。
-            self.store.trash(r["id"])
-        # v0.2.8：巩固产物落审计——此前夜间合并是唯一无审计的变更通道，
-        # 出事只能靠血缘链反推（本轮 P0 就吃了这个亏：483 条误并无法溯源到批次）
-        self.store.record_memory_event(
-            "consolidate", scope=scope,
-            source_ids=[r["id"] for r in cluster], target_id=new_id,
+        result = self.store.adjudicated_write(
+            action="merge", scope=scope, content=new_content,
+            memory_type=best["memory_type"], source=best["source"],
+            strength=float(best["strength"] or 10.0),
+            reasoning=str(best["reasoning"] if "reasoning" in best.keys() else ""),
+            tags=self.store.parse_tags(best),
+            target_ids=[r["id"] for r in cluster], vec=vec,
             reason="夜间巩固（向量+文本双确认）",
             provider=str(getattr(self.llm, "provider_id", "") or ""),
+            event_action="consolidate",
         )
+        if not result:
+            return False
+        # 事务成功后才刷新缓存，避免失败写入留下幽灵状态。
+        if vec:
+            self._vectors_dirty = True
         return True
 
     # ============================================================ 淘汰审查
