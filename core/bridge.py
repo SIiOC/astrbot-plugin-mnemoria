@@ -7,9 +7,8 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+from astrbot.api import logger
 
-logger = logging.getLogger(__name__)
 
 
 class Embedder:

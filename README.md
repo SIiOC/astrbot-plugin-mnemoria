@@ -243,6 +243,10 @@ astrbot_plugin_mnemoria/
 
 完整版本史与孵化期事故记录见 [CHANGELOG.md](CHANGELOG.md)。摘要：
 
+- 1.0.4 — 市场审查合规版（2026-09-27）：全插件 logger 统一
+  `from astrbot.api import logger`（不再使用内置 logging），CLI 脚本
+  导入链适配。
+
 - 1.0.3 — 控制台 scope 边界补全版（2026-09-27）：面板账本/回收站按域
   列出、记忆/笔记按 ID 操作原子域校验、前端 scope 贯穿。
 
@@ -256,6 +260,8 @@ astrbot_plugin_mnemoria/
 - 1.0.0 — 首个公开发布版（2026-09-24）：发布树经确定性流水线生成，
   零预设内容，与作者内部版本自此分叉；功能快照 = 内部 0.2.15。
 
+- 0.2.19 — 市场审查合规批（logger 统一 `from astrbot.api import logger`，
+  CLI 脚本导入链适配）
 - 0.2.18 — 控制台 scope 边界补全批（面板账本/回收站按域列出、按 ID 操作
   原子域校验、前端 scope 贯穿）
 - 0.2.17 — 数据边界与完整性加固批（账本 scope/role 隔离、巩固事务化、

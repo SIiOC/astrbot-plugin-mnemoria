@@ -10,11 +10,10 @@
 
 from __future__ import annotations
 
-import logging
+from astrbot.api import logger
 import sqlite3
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 6
 

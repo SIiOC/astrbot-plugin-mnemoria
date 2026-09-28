@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import logging
+from astrbot.api import logger
 import sqlite3
 from pathlib import Path
 
 from .paths import DataPaths, to_local_str, utc_now_ts
 
-logger = logging.getLogger(__name__)
 
 _MEM_COLS = (
     "id, content, reasoning, memory_type, source, speaker, speaker_key, is_active, strength, "

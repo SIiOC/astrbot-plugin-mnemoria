@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import logging
+from astrbot.api import logger
 from dataclasses import dataclass, field
 
 from astrbot.api import FunctionTool
 from astrbot.api.event import AstrMessageEvent
 
-try:
-    from astrbot.api import logger
-except ImportError:
-    logger = logging.getLogger(__name__)
 
 
 @dataclass

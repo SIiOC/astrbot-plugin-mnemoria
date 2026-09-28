@@ -24,16 +24,12 @@ v0.2.4（对齐 angel_remember 的动作协议）：
 
 from __future__ import annotations
 
-import logging
+from astrbot.api import logger
 from dataclasses import dataclass, field
 
 from astrbot.api import FunctionTool
 from astrbot.api.event import AstrMessageEvent
 
-try:
-    from astrbot.api import logger
-except ImportError:
-    logger = logging.getLogger(__name__)
 
 
 def _engine_from(event: AstrMessageEvent):

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
+from astrbot.api import logger
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -21,7 +21,6 @@ from .store import MemoryStore
 from .tags import derive_tags, identities_from_label
 from .text import content_hash, normalize, sanitize_for_context, truncate
 
-logger = logging.getLogger(__name__)
 
 
 def rel_time_label(ts: float, now: float | None = None) -> str:

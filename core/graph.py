@@ -14,14 +14,13 @@
 from __future__ import annotations
 
 import json
-import logging
+from astrbot.api import logger
 import math
 import sqlite3
 import threading
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
 
 TOP_K = 3          # 每节点保留的最强关联数（设计稿方向 B 的骨干）
 MIN_SIM = 0.55     # 低于此相似度的边不进骨干（真实嵌入校准：同义改写 0.68+）

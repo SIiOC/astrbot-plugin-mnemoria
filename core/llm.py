@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
+from astrbot.api import logger
 import re
 from typing import Any
 
-logger = logging.getLogger(__name__)
 
 _JSON_BLOCK = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 

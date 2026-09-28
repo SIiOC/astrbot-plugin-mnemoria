@@ -7,10 +7,9 @@ terminate 时统一 cancel + gather，杜绝插件卸载后任务泄漏。
 from __future__ import annotations
 
 import asyncio
-import logging
+from astrbot.api import logger
 from typing import Any, Awaitable, Callable
 
-logger = logging.getLogger(__name__)
 
 
 class TaskRegistry:

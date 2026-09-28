@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-import logging
+from astrbot.api import logger
 import json
 import sqlite3
 import uuid
@@ -17,7 +17,6 @@ from .paths import utc_now_ts
 from .tags import normalize_tags
 from .text import content_hash
 
-logger = logging.getLogger(__name__)
 
 def _tags_to_json(tags: list[str] | None) -> str:
     """tags 规范化落库：去空白/去重/截 6 个/每个截 24 字。"""

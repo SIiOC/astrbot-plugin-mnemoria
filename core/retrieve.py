@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import json
-import logging
+from astrbot.api import logger
 import sqlite3
 from dataclasses import dataclass, field
 from operator import mul
@@ -22,7 +22,6 @@ from .scoring import anchor_ts, hotness
 from .text import estimate_tokens
 from .vector import cosine
 
-logger = logging.getLogger(__name__)
 
 
 @dataclass

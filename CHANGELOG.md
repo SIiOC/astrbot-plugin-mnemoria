@@ -1,11 +1,25 @@
 # Changelog
 
-> 完整迭代记录。其中 0.1.0 → 0.2.18 为作者个人环境的孵化期
-> （20 轮审查迭代），文中「线上实测」等字样均指作者本人的部署环境。
+> 完整迭代记录。其中 0.1.0 → 0.2.19 为作者个人环境的孵化期
+> （21 轮审查迭代），文中「线上实测」等字样均指作者本人的部署环境。
 >
-> 版本对应关系：公开发布的 **1.0.3** = 内部 0.2.18、**1.0.2** = 内部 0.2.17、
-> **1.0.1** = 内部 0.2.16、**1.0.0** = 内部 0.2.15（发布树经确定性流水线生成，
-> 零预设内容；此后发布树与内部版本各自演进）。
+> 版本对应关系：公开发布的 **1.0.4** = 内部 0.2.19、**1.0.3** = 内部 0.2.18、
+> **1.0.2** = 内部 0.2.17、**1.0.1** = 内部 0.2.16、**1.0.0** = 内部 0.2.15
+> （发布树经确定性流水线生成，零预设内容；此后发布树与内部版本各自演进）。
+
+## 1.0.4 (2026-09-27)
+
+插件市场审查合规版（日志记录违规修复）：
+- **logger 统一改为 `from astrbot.api import logger`**：全插件 17 个模块
+  （core×11 + tools×4 + main + scripts/reembed_vectors）不再使用 Python
+  内置 logging 模块——main/tools 原有的 `try/except ImportError`
+  兜底分支一并移除（审查规范要求必须且只能从 astrbot.api 导入）；
+  日志由此进入框架的插件专属通道（每插件可独立调级）；
+- **CLI 脚本导入链适配**：`core/__init__` 在导入任何 core 模块前把
+  AstrBot 源码根装配进 `sys.path`（读 `ASTRBOT_IMPORT_ROOT`/`ASTRBOT_ROOT`
+  环境变量），脱离框架直跑 `scripts/` 下脚本时给出可操作报错而非裸
+  `ModuleNotFoundError`；`reembed_vectors.py` 的 logger 导入移至 core
+  之后（顺序反了会在路径装配前触发导入失败）。
 
 ## 1.0.3 (2026-09-27)
 
@@ -60,8 +74,23 @@
 
 ---
 
-## 内部孵化期（0.1.0 → 0.2.18）
+## 内部孵化期（0.1.0 → 0.2.19）
 
+
+0.2.19 — 市场审查合规批（2026-09-27，上架打回修复：日志记录违规）：
+- **审查要求**：logger 必须且只能 `from astrbot.api import logger`，严禁
+  内置 logging——打回清单点名 core 九模块（截断），全树扫描实为 17 处；
+- **机械替换脚本**（每文件断言命中数防误替换）：try/except 兜底块（main
+  +tools×4）整删、裸 logging 导入+模块级 logger 赋值（core×11+reembed）
+  原位一行替换+删赋值行；替换后全树内置 logging 引用归零、
+  `from astrbot.api import logger` 17 文件各恰 1 处；
+- **CLI 导入链**：astrbot 包不在 venv（只在源码根）——`core/__init__`
+  顶部按 `ASTRBOT_IMPORT_ROOT`/`ASTRBOT_ROOT` 装配 sys.path，缺失时
+  SystemExit 给可操作提示；`reembed_vectors.py` logger 导入必须排在
+  `from core import db` 之后（core/__init__ 装配先发生），实测带环境变量
+  `--help` 正常、无变量时友好报错；
+- 验证：pytest 616 绿/1 跳、selftest_offline 35/35、web_api_smoke 18 项
+  全 ok。
 
 0.2.18 — 控制台 scope 边界补全批（2026-09-27，v1.0.2 发布后复审）：
 - **面板列表分域**：`_list_ledger` 走 `recent_ledger(scope=,role=)`/带

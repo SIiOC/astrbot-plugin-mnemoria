@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-import logging
+from astrbot.api import logger
 from typing import Any, Callable
 
 from quart import jsonify, request
@@ -19,7 +19,6 @@ from quart import jsonify, request
 from . import graph
 from .paths import to_local_str
 
-logger = logging.getLogger(__name__)
 
 PLUGIN_NAME = "astrbot_plugin_mnemoria"
 

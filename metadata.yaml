@@ -2,7 +2,7 @@ name: astrbot_plugin_mnemoria
 display_name: 好想记住你
 desc: 长期记忆系统：对话流水账本 + 记忆抽取与衰减 + 用户画像 + 混合检索注入
 license: "AGPL-3.0"
-version: "1.0.3"
+version: "1.0.4"
 author: "SIiOC"
 repo: "https://github.com/SIiOC/astrbot-plugin-mnemoria"
 astrbot_version: ">=4.5.7"

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sqlite3
 import sys
 import time
@@ -25,8 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core import db as dbm  # noqa: E402
 from core.bridge import _call_embed  # noqa: E402
-
-logger = logging.getLogger(__name__)
+# logger 必须在 core 之后导入：core/__init__ 会先把 AstrBot 源码根装配进
+# sys.path（CLI 直跑时 astrbot 不在 venv 里），顺序反了这里就 ModuleNotFoundError
+from astrbot.api import logger  # noqa: E402
 
 
 def _load_provider(config_path: Path, provider_id: str) -> dict:

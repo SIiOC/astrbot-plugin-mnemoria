@@ -10,11 +10,10 @@ AstrBot 的配置由 _conf_schema.json 驱动，升级插件时旧配置可能�
 from __future__ import annotations
 
 import json
-import logging
+from astrbot.api import logger
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
 
 # 当前配置 schema 版本。每次破坏性改键（改名/删键/改语义）时 +1，并在 _MIGRATIONS 里补一步。
 CONFIG_SCHEMA_VERSION = 1

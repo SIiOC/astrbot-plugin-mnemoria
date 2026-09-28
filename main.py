@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-import logging
+from astrbot.api import logger
 import os
 from datetime import datetime
 
@@ -14,10 +14,6 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 from astrbot.core.star.star_tools import StarTools
 
-try:
-    from astrbot.api import logger
-except ImportError:
-    logger = logging.getLogger(__name__)
 
 from .core import db as dbm
 from .core.backup import write_backup
