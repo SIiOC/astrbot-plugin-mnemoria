@@ -147,7 +147,10 @@ AstrBot 长期记忆插件：**对话流水账本 + 自动记忆抽取与衰减 
 
 ## 测试
 
-测试全部使用 AstrBot 自带 venv（**不要**用系统 Python，缺依赖会误报）：
+测试全部使用 AstrBot 自带 venv（**不要**用系统 Python，缺依赖会误报）。
+**v1.0.4 起 pytest 与 `tests/`、`scripts/` 下所有独立脚本都依赖 `astrbot.api` 的
+logger**：运行前设置 `ASTRBOT_ROOT` 指向 AstrBot 根目录（`astrbot` 包在源码根
+而不在 venv 内），否则脚本会主动报错提示：
 
 ```bash
 # pytest 套件（推荐）
@@ -156,8 +159,8 @@ ASTRBOT_ROOT=/path/to/AstrBot /path/to/AstrBot/venv/Scripts/python -m pytest tes
 # 离线质量评测（可分别指向 v0.1.9 / v0.2.0 插件副本做对比）
 python scripts/eval_memory_quality.py --plugin <插件根> --label v0.2.0 --out eval.json
 
-# 独立集成脚本
-python tests/selftest_offline.py    # 核心纯逻辑（不需要 AstrBot）
+# 独立集成脚本（均需上述 ASTRBOT_ROOT + venv 前置）
+python tests/selftest_offline.py    # 核心纯逻辑快检
 python tests/integration_smoke.py   # 真框架钩子/工具链路
 python tests/web_api_smoke.py       # 29 条 WebAPI 路由
 python tests/coexist_smoke.py       # 与 Humanizer 共存
@@ -243,6 +246,9 @@ astrbot_plugin_mnemoria/
 
 完整版本史与孵化期事故记录见 [CHANGELOG.md](CHANGELOG.md)。摘要：
 
+- 1.0.5 — v1.0.4 全量审查修复版（2026-09-28）：脚本运行前置说明补全
+  （venv + ASTRBOT_ROOT）、core 版本动态溯源。
+
 - 1.0.4 — 市场审查合规版（2026-09-27）：全插件 logger 统一
   `from astrbot.api import logger`（不再使用内置 logging），CLI 脚本
   导入链适配。
@@ -260,6 +266,7 @@ astrbot_plugin_mnemoria/
 - 1.0.0 — 首个公开发布版（2026-09-24）：发布树经确定性流水线生成，
   零预设内容，与作者内部版本自此分叉；功能快照 = 内部 0.2.15。
 
+- 0.2.20 — v1.0.4 全量审查修复批（脚本运行前置文档、core 版本动态溯源）
 - 0.2.19 — 市场审查合规批（logger 统一 `from astrbot.api import logger`，
   CLI 脚本导入链适配）
 - 0.2.18 — 控制台 scope 边界补全批（面板账本/回收站按域列出、按 ID 操作

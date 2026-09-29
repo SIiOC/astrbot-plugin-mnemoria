@@ -29,6 +29,18 @@ except ImportError:
         "例如 set ASTRBOT_ROOT=<你的 AstrBot 目录>"
     )
 
-__version__ = "0.1.0"
+# 包版本与 metadata.yaml 保持同源：个人树读到内部版本号（0.2.x），
+# 发布树经流水线改写 metadata 后自动读到公开发布号（1.0.x），永不漂移
+try:
+    from pathlib import Path as _MetaPath
+
+    import yaml as _yaml
+
+    _meta = _yaml.safe_load(
+        (_MetaPath(__file__).resolve().parents[1] / "metadata.yaml").read_text(encoding="utf-8")
+    )
+    __version__ = str((_meta or {}).get("version") or "unknown")
+except Exception:  # noqa: BLE001  metadata 缺失/损坏时兜底，不影响插件加载
+    __version__ = "unknown"
 
 __all__ = ["__version__"]

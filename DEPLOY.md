@@ -27,6 +27,11 @@
 
 ## 阶段 0.5：迁移 angel 记忆（若在部署时一起做）
 
+> **脚本运行前置（v1.0.4 起适用所有 `scripts/` 脚本）**：请使用 AstrBot 自带的
+> venv 解释器运行，并先设置环境变量 `ASTRBOT_ROOT` 指向 AstrBot 根目录
+> （`astrbot` 包在源码根而不在 venv 内；未设置时脚本会主动报错提示）。
+> 例如：`set ASTRBOT_ROOT=E:\...\AstrBot` → `<AstrBot>\venv\Scripts\python.exe scripts\...`。
+
 angel 侧只读（`migrate_from_angel.py` 以 mode=ro 打开，动前动后 SHA256 核验）：
 
 ```
